@@ -1,0 +1,39 @@
+{
+  "_comment": "AI Employee Silver Tier — MCP Server Configuration",
+  "_usage": "Use with: claude --mcp-config mcp.json  (from Silver Tier directory)",
+  "_docs": "https://modelcontextprotocol.io/quickstart",
+
+  "mcpServers": {
+    "email": {
+      "_comment": "Email MCP — sends/drafts Gmail via Google API",
+      "_setup": "Set EMAIL_MCP_PATH in .env to the absolute path of your email MCP server's index.js",
+      "_disable": "Leave EMAIL_MCP_PATH unset to disable email sending (system degrades gracefully)",
+      "command": "node",
+      "args": ["${EMAIL_MCP_PATH}"],
+      "env": {
+        "GMAIL_CLIENT_ID": "${GMAIL_CLIENT_ID}",
+        "GMAIL_CLIENT_SECRET": "${GMAIL_CLIENT_SECRET}",
+        "GMAIL_REFRESH_TOKEN": "${GMAIL_REFRESH_TOKEN}",
+        "DRY_RUN": "${DRY_RUN}"
+      }
+    },
+
+    "browser": {
+      "_comment": "Browser MCP — web automation for form-filling, payments (future use)",
+      "_setup": "npm install -g @anthropic/browser-mcp",
+      "command": "npx",
+      "args": ["-y", "@anthropic/browser-mcp"],
+      "env": {
+        "HEADLESS": "${BROWSER_MCP_HEADLESS}"
+      }
+    },
+
+    "filesystem": {
+      "_comment": "Filesystem MCP — explicit file access (built-in to Claude Code, listed for reference)",
+      "_note": "Claude Code already has filesystem access via its built-in tools. This entry is optional.",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-filesystem", "${VAULT_PATH}"],
+      "env": {}
+    }
+  }
+}

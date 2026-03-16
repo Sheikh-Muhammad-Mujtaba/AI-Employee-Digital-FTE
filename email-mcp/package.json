@@ -1,0 +1,10 @@
+{
+  "name": "ai-employee-email-mcp",
+  "version": "1.0.0",
+  "description": "Gmail sender for AI Employee Silver Tier",
+  "main": "index.js",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "googleapis": "^144.0.0"
+  }
+}
