@@ -1,14 +1,11 @@
 """
-orchestrator.py - Master process for the AI Employee (Silver Tier).
+orchestrator.py - Master process for the AI Employee (Gold Tier).
 
-Silver upgrades over Bronze:
-  ✅ All Bronze functionality (Needs_Action watcher, dashboard updater, Claude trigger)
-  🆕 Approved action executor — parses /Approved files and calls MCP/API
-  🆕 Plan.md reasoning loop — Claude is prompted to create plans for complex tasks
-  🆕 LinkedIn post publisher — calls LinkedIn API for approved posts
-  🆕 Email sender — calls Email MCP for approved emails
-  🆕 Approval expiry handler — moves stale approvals to /Rejected automatically
-  🆕 Silver-tier structured logging with action_type taxonomy
+Gold upgrades over Silver:
+  ✅ All Silver functionality
+  🆕 Twitter/X post publisher — calls twitter_poster.py for approved tweets
+  🆕 Facebook post publisher — calls meta_poster.py --platform facebook
+  🆕 Instagram post publisher — calls meta_poster.py --platform instagram
 
 Usage:
     python orchestrator.py --vault /path/to/AI_Employee_Vault [--dry-run]
@@ -179,19 +176,29 @@ Task file to process: {action_file}
    - Write it to {vault}/Briefings/ with filename BRIEFING_<date>.md
    - Move the original task file to {vault}/Done/
 
-### If type == "linkedin":
-   - Draft the LinkedIn post.
-   - Create a file in {vault}/Pending_Approval/ named POST_<timestamp>.md with this exact format:
-     ```
-     ---
-     action: post_linkedin
-     created: <current UTC datetime in ISO format>
-     ---
+### If type == "linkedin_post":
+   - Use the /post-linkedin skill to draft the post.
+   - Create a file in {vault}/Pending_Approval/ with action: post_linkedin in frontmatter.
+   - Move the original task file to {vault}/Done/
 
-     <your drafted post content here>
+### If type == "twitter_post":
+   - Use the /post-twitter skill to draft the tweet (max 280 chars).
+   - Create a file in {vault}/Pending_Approval/ with action: post_twitter in frontmatter.
+   - Move the original task file to {vault}/Done/
 
-     ---
-     ```
+### If type == "facebook_post":
+   - Use the /post-facebook skill to draft the post.
+   - Create a file in {vault}/Pending_Approval/ with action: post_facebook in frontmatter.
+   - Move the original task file to {vault}/Done/
+
+### If type == "instagram_post":
+   - Use the /post-instagram skill to draft the post.
+   - Include image_url in the frontmatter of the Pending_Approval file.
+   - Create a file in {vault}/Pending_Approval/ with action: post_instagram in frontmatter.
+   - Move the original task file to {vault}/Done/
+
+### If type == "erpnext_audit":
+   - Use the /accounting-audit skill to pull data and write a snapshot.
    - Move the original task file to {vault}/Done/
 
 ### For any other task:
@@ -244,9 +251,12 @@ class ApprovedActionExecutor:
     Reads an approved file, determines the action type, and executes it.
 
     Supported action types:
-      - send_email    → calls Email MCP server
-      - post_linkedin → calls LinkedIn UGC Posts API
-      - (others)      → logged and moved to Done
+      - send_email      → calls Email MCP server
+      - post_linkedin   → calls linkedin_poster.py
+      - post_twitter    → calls twitter_poster.py
+      - post_facebook   → calls meta_poster.py --platform facebook
+      - post_instagram  → calls meta_poster.py --platform instagram
+      - (others)        → logged and moved to Done
     """
 
     def __init__(self, vault: Path):
@@ -263,9 +273,16 @@ class ApprovedActionExecutor:
         return True
 
     def execute(self, approved_file: Path):
-        text = approved_file.read_text(encoding="utf-8")
+        try:
+            text = approved_file.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.warning(f"Approved file already processed/moved: {approved_file.name}")
+            return
         fields = parse_frontmatter(text)
-        action_type = fields.get("action", "unknown")
+        action_type = fields.get("action", "") or fields.get("type", "unknown")
+        # Normalise type → action name
+        type_map = {"twitter_post": "post_twitter", "facebook_post": "post_facebook", "instagram_post": "post_instagram"}
+        action_type = type_map.get(action_type, action_type)
 
         logger.info(f"Executing approved action: {action_type} — {approved_file.name}")
 
@@ -277,6 +294,12 @@ class ApprovedActionExecutor:
                 self._execute_send_email(approved_file, fields, text)
             elif action_type == "post_linkedin":
                 self._execute_post_linkedin(approved_file, fields, text)
+            elif action_type == "post_twitter":
+                self._execute_post_twitter(approved_file, fields, text)
+            elif action_type == "post_facebook":
+                self._execute_post_facebook(approved_file, fields, text)
+            elif action_type == "post_instagram":
+                self._execute_post_instagram(approved_file, fields, text)
             else:
                 logger.info(f"Action type '{action_type}' acknowledged — no automated execution defined.")
                 log_event(self.vault, "action_acknowledged", file=approved_file.name, action=action_type)
@@ -286,8 +309,11 @@ class ApprovedActionExecutor:
             if dest.exists():
                 ts = datetime.utcnow().strftime("%H%M%S")
                 dest = done_dir / f"{approved_file.stem}_{ts}{approved_file.suffix}"
-            approved_file.rename(dest)
-            logger.info(f"Moved to /Done: {approved_file.name}")
+            try:
+                approved_file.rename(dest)
+                logger.info(f"Moved to /Done: {approved_file.name}")
+            except FileNotFoundError:
+                pass  # already moved by a duplicate event
 
         except Exception as e:
             logger.error(f"Failed to execute {action_type} for {approved_file.name}: {e}", exc_info=True)
@@ -349,8 +375,8 @@ class ApprovedActionExecutor:
                     result="success",
                 )
             else:
-                logger.error(f"Email MCP failed: {result.stderr[:200]}")
-                log_event(self.vault, "email_failed", to=to, error=result.stderr[:200])
+                logger.error(f"Email MCP failed: {result.stderr[:2000]}")
+                log_event(self.vault, "email_failed", to=to, error=result.stderr[:2000])
         except subprocess.TimeoutExpired:
             logger.error("Email MCP timed out.")
 
@@ -379,7 +405,7 @@ class ApprovedActionExecutor:
                 logger.info("LinkedIn post published via Playwright.")
                 log_event(self.vault, "linkedin_posted", approved_by="human", result="success")
             else:
-                err = output.get("error", result.stderr[:200])
+                err = output.get("error", result.stderr[:2000])
                 logger.error(f"LinkedIn poster failed: {err}")
                 log_event(self.vault, "linkedin_failed", error=err)
         except subprocess.TimeoutExpired:
@@ -388,6 +414,110 @@ class ApprovedActionExecutor:
         except Exception as e:
             logger.error(f"LinkedIn poster error: {e}")
             log_event(self.vault, "linkedin_failed", error=str(e))
+
+
+    def _execute_post_twitter(self, approved_file: Path, fields: dict, text: str):
+        parts = text.split("---")
+        post_content = parts[3].strip() if len(parts) > 3 else ""
+
+        if not post_content:
+            logger.error("Twitter: post content is empty — check the approval file format.")
+            return
+
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would post to Twitter:\n{post_content[:280]}")
+            log_event(self.vault, "twitter_post_dry_run", content_preview=post_content[:100])
+            return
+
+        poster_script = Path(__file__).parent / "twitter_poster.py"
+        try:
+            result = subprocess.run(
+                ["python", str(poster_script), "--post"],
+                input=json.dumps({"content": post_content}),
+                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+            )
+            output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
+            if output.get("success"):
+                logger.info("Twitter post published via Playwright.")
+                log_event(self.vault, "twitter_posted", approved_by="human", result="success")
+            else:
+                err = output.get("error", result.stderr[:2000])
+                logger.error(f"Twitter poster failed: {err}")
+                log_event(self.vault, "twitter_failed", error=err)
+        except subprocess.TimeoutExpired:
+            logger.error("Twitter poster timed out.")
+            log_event(self.vault, "twitter_failed", error="timeout")
+        except Exception as e:
+            logger.error(f"Twitter poster error: {e}")
+            log_event(self.vault, "twitter_failed", error=str(e))
+
+    def _execute_post_facebook(self, approved_file: Path, fields: dict, text: str):
+        parts = text.split("---")
+        post_content = parts[3].strip() if len(parts) > 3 else ""
+
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would post to Facebook:\n{post_content[:200]}")
+            log_event(self.vault, "facebook_post_dry_run", content_preview=post_content[:100])
+            return
+
+        poster_script = Path(__file__).parent / "meta_poster.py"
+        try:
+            result = subprocess.run(
+                ["py", "-3.13", str(poster_script), "--platform", "facebook", "--post"],
+                input=json.dumps({"content": post_content}),
+                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+            )
+            output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
+            if output.get("success"):
+                logger.info("Facebook post published via Playwright.")
+                log_event(self.vault, "facebook_posted", approved_by="human", result="success")
+            else:
+                err = output.get("error", result.stderr[:2000])
+                logger.error(f"Facebook poster failed: {err}")
+                log_event(self.vault, "facebook_failed", error=err)
+        except subprocess.TimeoutExpired:
+            logger.error("Facebook poster timed out.")
+            log_event(self.vault, "facebook_failed", error="timeout")
+        except Exception as e:
+            logger.error(f"Facebook poster error: {e}")
+            log_event(self.vault, "facebook_failed", error=str(e))
+
+    def _execute_post_instagram(self, approved_file: Path, fields: dict, text: str):
+        parts = text.split("---")
+        post_content = parts[3].strip() if len(parts) > 3 else ""
+        image_url = fields.get("image_url", "")
+
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would post to Instagram (image: {image_url}):\n{post_content[:200]}")
+            log_event(self.vault, "instagram_post_dry_run", content_preview=post_content[:100])
+            return
+
+        if not image_url:
+            logger.error("Instagram post missing image_url in frontmatter — skipping.")
+            log_event(self.vault, "instagram_failed", error="missing_image_url", file=approved_file.name)
+            return
+
+        poster_script = Path(__file__).parent / "meta_poster.py"
+        try:
+            result = subprocess.run(
+                ["py", "-3.13", str(poster_script), "--platform", "instagram", "--post"],
+                input=json.dumps({"content": post_content, "image_url": image_url}),
+                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+            )
+            output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
+            if output.get("success"):
+                logger.info("Instagram post published via Playwright.")
+                log_event(self.vault, "instagram_posted", approved_by="human", result="success")
+            else:
+                err = output.get("error", result.stderr[:2000])
+                logger.error(f"Instagram poster failed: {err}")
+                log_event(self.vault, "instagram_failed", error=err)
+        except subprocess.TimeoutExpired:
+            logger.error("Instagram poster timed out.")
+            log_event(self.vault, "instagram_failed", error="timeout")
+        except Exception as e:
+            logger.error(f"Instagram poster error: {e}")
+            log_event(self.vault, "instagram_failed", error=str(e))
 
 
 # ── Approval expiry handler ───────────────────────────────────────────────────
@@ -515,6 +645,14 @@ def main():
     observer.schedule(needs_handler, str(vault / "Needs_Action"), recursive=False)
     observer.schedule(approved_handler, str(vault / "Approved"), recursive=False)
     observer.start()
+
+    # Process any files already sitting in /Approved/ before we started
+    approved_dir = vault / "Approved"
+    for f in sorted(approved_dir.iterdir()):
+        if f.is_file() and not f.name.startswith("."):
+            logger.info(f"Startup: found existing approved file: {f.name}")
+            log_event(vault, "action_approved", file=f.name, approved_by="human")
+            executor.execute(f)
 
     update_dashboard(vault)
 

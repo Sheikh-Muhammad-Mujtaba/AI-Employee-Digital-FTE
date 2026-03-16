@@ -1,0 +1,40 @@
+{
+  "erpnext": {
+    "url": "https://ca1.erpnext.cloud",
+    "api_key": "ded79da359ee399",
+    "api_secret": "dada4c53cd40f5c"
+  },
+  "permissions": {
+    "doctypes": {
+      "Customer": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["name", "customer_name", "territory", "customer_group", "status"],
+        "restricted_fields": ["email_id", "mobile_no", "primary_address", "credit_limit", "payment_terms"]
+      },
+      "Item": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["item_code", "item_name", "item_group", "description"],
+        "restricted_fields": ["standard_rate", "valuation_rate", "opening_stock", "last_purchase_rate"]
+      },
+      "Sales Invoice": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["name", "customer", "posting_date", "due_date", "grand_total", "outstanding_amount", "status"],
+        "restricted_fields": ["taxes", "payment_terms", "advance_paid", "accounting_dimensions"]
+      }
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "log_level": "WARNING",
+    "log_file": "logs/restricted_audit.log"
+  }
+}

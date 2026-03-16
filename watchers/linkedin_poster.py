@@ -257,7 +257,7 @@ def main():
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
-            executable_path=chrome_path if Path(chrome_path).exists() else None,
+            executable_path=chrome_path if chrome_path and Path(chrome_path).exists() else None,
             headless=False,  # must be False for persistent context login
             args=[
                 "--no-sandbox",

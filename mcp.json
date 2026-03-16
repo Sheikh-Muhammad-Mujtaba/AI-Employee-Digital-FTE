@@ -1,13 +1,15 @@
 {
-  "_comment": "AI Employee Silver Tier — MCP Server Configuration",
-  "_usage": "Use with: claude --mcp-config mcp.json  (from Silver Tier directory)",
+  "_comment": "AI Employee Gold Tier — MCP Server Configuration",
+  "_usage": "Use with: claude --mcp-config mcp.json  (from Gold Tier directory)",
   "_docs": "https://modelcontextprotocol.io/quickstart",
+  "_social_note": "Twitter, Facebook, Instagram use Playwright scripts directly — no MCP needed",
 
   "mcpServers": {
+
     "email": {
       "_comment": "Email MCP — sends/drafts Gmail via Google API",
       "_setup": "Set EMAIL_MCP_PATH in .env to the absolute path of your email MCP server's index.js",
-      "_disable": "Leave EMAIL_MCP_PATH unset to disable email sending (system degrades gracefully)",
+      "_disable": "Leave EMAIL_MCP_PATH unset to disable (system degrades gracefully)",
       "command": "node",
       "args": ["${EMAIL_MCP_PATH}"],
       "env": {
@@ -18,22 +20,30 @@
       }
     },
 
+    "erpnext": {
+      "_comment": "ERPNext MCP — accounting CRUD via ERPNext REST API",
+      "_setup": "cd ERP_Next-MCP && uv sync && cp .env.example .env (fill credentials)",
+      "command": "python",
+      "args": ["-m", "src.server"],
+      "cwd": "${ERPNEXT_MCP_PATH}",
+      "env": {
+        "ERPNEXT_URL": "${ERPNEXT_URL}",
+        "ERPNEXT_USERNAME": "${ERPNEXT_USERNAME}",
+        "ERPNEXT_PASSWORD": "${ERPNEXT_PASSWORD}",
+        "ERPNEXT_API_KEY": "${ERPNEXT_API_KEY}",
+        "ERPNEXT_API_SECRET": "${ERPNEXT_API_SECRET}"
+      }
+    },
+
     "browser": {
-      "_comment": "Browser MCP — web automation for form-filling, payments (future use)",
+      "_comment": "Browser MCP — web automation for form-filling, ad-hoc scraping",
       "_setup": "npm install -g @anthropic/browser-mcp",
       "command": "npx",
       "args": ["-y", "@anthropic/browser-mcp"],
       "env": {
         "HEADLESS": "${BROWSER_MCP_HEADLESS}"
       }
-    },
-
-    "filesystem": {
-      "_comment": "Filesystem MCP — explicit file access (built-in to Claude Code, listed for reference)",
-      "_note": "Claude Code already has filesystem access via its built-in tools. This entry is optional.",
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-filesystem", "${VAULT_PATH}"],
-      "env": {}
     }
+
   }
 }

@@ -1,0 +1,59 @@
+{
+  "erpnext": {
+    "url": "https://ca1.erpnext.cloud",
+    "api_key": "ded79da359ee399",
+    "api_secret": "dada4c53cd40f5c"
+  },
+  "permissions": {
+    "doctypes": {
+      "Customer": {
+        "read": true,
+        "create": true,
+        "update": true,
+        "delete": true,
+        "allowed_fields": ["customer_name", "email_id", "mobile_no", "customer_type", "territory", "customer_group", "website"],
+        "restricted_fields": ["credit_limit", "payment_terms", "accounts", "default_price_list"],
+        "conditions": {
+          "create": {
+            "customer_type": ["Company", "Individual"],
+            "territory": ["All Territories", "Egypt", "UAE"]
+          },
+          "update": {
+            "status": {"not_in": ["Disabled", "Suspended"]}
+          }
+        }
+      },
+      "Item": {
+        "read": true,
+        "create": true,
+        "update": true,
+        "delete": true,
+        "allowed_fields": ["item_code", "item_name", "item_group", "stock_uom", "description", "standard_rate"],
+        "restricted_fields": ["valuation_rate", "last_purchase_rate", "weight_per_unit", "opening_stock","owner"]
+      },
+      "Sales Order": {
+        "read": true,
+        "create": true,
+        "update": true,
+        "delete": false,
+        "allowed_fields": ["customer", "transaction_date", "delivery_date", "items", "total", "status"],
+        "restricted_fields": ["taxes", "payment_terms", "advance_paid", "per_billed"]
+      }
+    }
+  },
+  "rate_limiting": {
+    "enabled": true,
+    "requests_per_minute": 30,
+    "requests_per_hour": 500
+  },
+  "cache": {
+    "enabled": true,
+    "ttl": 300
+  },
+  "audit": {
+    "enabled": true,
+    "log_level": "INFO",
+    "log_file": "logs/audit.log",
+    "retention_days": 30
+  }
+}

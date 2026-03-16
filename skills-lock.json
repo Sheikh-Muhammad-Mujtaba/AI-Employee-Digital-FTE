@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "email-sequence": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "computedHash": "c32ccdf4816eef12987276b9cd72c995ecd784d0d1c22c37df075d4518f5519d"
+    },
+    "gmail-skill": {
+      "source": "idanbeck/claude-skills",
+      "sourceType": "github",
+      "computedHash": "b10ec45b4f01efe71dde245f31272ed2753e6064cb98ef9c0557cfbe65de3230"
+    },
+    "social-content": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "computedHash": "15c007a7929ef8613e2085f03240d76966a4e190a028b8bcd7cd65a2b5da92ac"
+    },
+    "symfony:symfony-scheduler": {
+      "source": "makfly/superpowers-symfony",
+      "sourceType": "github",
+      "computedHash": "9c1f3ff2d83079803c83d991785ab83d916130c46c93510cb66b036856086fe9"
+    },
+    "writing-linkedin-posts": {
+      "source": "jamesgray007/hoai-course",
+      "sourceType": "github",
+      "computedHash": "907d4a4e6c128e925be84e708046fd95fc648dc3278acf4ffa077064a5d8c5dd"
+    }
+  }
+}

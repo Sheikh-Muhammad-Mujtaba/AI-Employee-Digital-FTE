@@ -1,0 +1,59 @@
+{
+  "erpnext": {
+    "timeout": 30
+  },
+  "permissions": {
+    "doctypes": {
+      "Customer": {
+        "read": true,
+        "create": true,
+        "update": true,
+        "delete": false,
+        "allowed_fields": [],
+        "restricted_fields": []
+      },
+      "Sales Invoice": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["name", "customer", "grand_total", "status", "posting_date", "due_date", "outstanding_amount"]
+      },
+      "GL Entry": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["name", "account", "debit", "credit", "voucher_type", "voucher_no", "posting_date", "remarks"]
+      },
+      "Payment Entry": {
+        "read": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "allowed_fields": ["name", "payment_type", "party", "paid_amount", "posting_date", "status"]
+      }
+    },
+    "default": {
+      "read": true,
+      "create": true,
+      "update": false,
+      "delete": false
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "log_file": "logs/audit.log",
+    "log_level": "INFO"
+  },
+  "rate_limiting": {
+    "enabled": true,
+    "requests_per_minute": 60,
+    "requests_per_hour": 1000
+  },
+  "cache": {
+    "enabled": true,
+    "ttl": 300,
+    "max_size": 1000
+  }
+}
