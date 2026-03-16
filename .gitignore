@@ -1,0 +1,29 @@
+# Secrets — NEVER commit these
+.env
+credentials/
+*.pem
+*.key
+
+# WhatsApp session
+whatsapp_session/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs (optional — remove if you want to track logs in git)
+AI_Employee_Vault/Logs/
