@@ -79,17 +79,31 @@ def login(page, context):
         logger.info("Already logged in via saved cookies.")
         return
 
-    logger.info(f"Not logged in (landed on: {page.url}). Please log in manually in the browser window.")
-    page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded", timeout=30000)
-    logger.warning("ACTION REQUIRED: Log in to LinkedIn in the browser window (use 'Continue with Google'). Waiting up to 3 minutes...")
+    logger.info(f"Not logged in (landed on: {page.url}). Proceeding with automated login...")
+    page.goto("https://www.linkedin.com/login", wait_until="networkidle", timeout=30000)
+    
+    try:
+        logger.info("Filling credentials...")
+        page.fill('input#username', LINKEDIN_EMAIL)
+        page.fill('input#password', LINKEDIN_PASSWORD)
+        page.click('button[type="submit"]')
+        page.wait_for_timeout(5000)
+    except Exception as e:
+        logger.warning(f"Automated login fill failed: {e}. You may need to handle this manually.")
 
     if "checkpoint" in page.url or "challenge" in page.url or "verify" in page.url or not is_logged_in(page):
-        logger.warning("LinkedIn verification required. Complete it in the browser window. Waiting up to 3 minutes...")
+        logger.warning(f"LinkedIn verification or manual intervention required. URL: {page.url}")
+        logger.warning("ACTION REQUIRED: Complete verification in the browser window. Waiting up to 3 minutes...")
+        logger.warning(f"LinkedIn verification required. URL: {page.url}")
+        logger.warning("ACTION REQUIRED: Complete verification in the browser window. Waiting up to 3 minutes...")
         # Poll until we land on the feed or timeout
-        for _ in range(180):
+        for i in range(180):
             page.wait_for_timeout(1000)
             if is_logged_in(page):
+                logger.info("Manual login detected!")
                 break
+            if i % 30 == 0:
+                logger.info(f"Still waiting for login... ({180-i}s remaining)")
         else:
             screenshot_path = COOKIES_FILE.parent / "linkedin_login_debug.png"
             page.screenshot(path=str(screenshot_path))

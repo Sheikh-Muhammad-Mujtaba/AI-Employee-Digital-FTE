@@ -1,0 +1,83 @@
+{
+  "sync_version": "1.0",
+  "description": "Platinum Tier Vault Sync Rules - Cloud ↔ Local",
+  
+  "cloud_to_local": {
+    "description": "Files/folders that Cloud pushes to Local",
+    "include": [
+      "Cloud/Drafts/**/*.md",
+      "Cloud/Updates/**/*.md",
+      "Cloud/Accounting/**/*.md",
+      "Shared/**/*.md",
+      "Shared/**/*.json"
+    ],
+    "exclude": [
+      "**/.gitkeep",
+      "**/README.md"
+    ]
+  },
+  
+  "local_to_cloud": {
+    "description": "Files/folders that Local pushes to Cloud (audit trail)",
+    "include": [
+      "Local/Done/**/*.md",
+      "Shared/**/*.md",
+      "Shared/**/*.json"
+    ],
+    "exclude": [
+      "**/.gitkeep",
+      "**/README.md"
+    ]
+  },
+  
+  "local_only": {
+    "description": "Files/folders that NEVER sync to Cloud (security critical)",
+    "paths": [
+      ".env",
+      "**/auth_info/**",
+      "**/Logs/.twitter_cookies.json",
+      "**/Logs/.gmail_processed_ids.txt",
+      "**/Logs/.meta_profile/**",
+      "**/Logs/chrome_profile/**",
+      "**/Logs/.linkedin_profile/**",
+      "Local/Pending_Approval/**",
+      "Local/Approved/**",
+      "Local/Rejected/**",
+      "Local/In_Progress/**",
+      "Local/Dashboard.md"
+    ]
+  },
+  
+  "cloud_only": {
+    "description": "Files/folders that Cloud manages (Local reads via sync)",
+    "paths": [
+      "Cloud/Inbox/**",
+      "Cloud/Needs_Action/**",
+      "Cloud/Plans/**",
+      "Cloud/Drafts/**",
+      "Cloud/Updates/**"
+    ]
+  },
+  
+  "conflict_resolution": {
+    "rule": "local_wins",
+    "description": "On conflict, Local version takes precedence (human-in-the-loop principle)",
+    "dashboard_rule": "Local only writes to Dashboard.md"
+  },
+  
+  "claim_by_move": {
+    "description": "Agent ownership tracking",
+    "rule": "First agent to move file from Needs_Action to In_Progress/<agent>/ owns it",
+    "agents": ["cloud_agent", "local_agent"],
+    "folders": {
+      "cloud_agent": "Cloud/In_Progress/cloud_agent/",
+      "local_agent": "Local/In_Progress/local_agent/"
+    }
+  },
+  
+  "approval_expiry": {
+    "hours": 48,
+    "action": "move_to_rejected",
+    "description": "Files in Pending_Approval older than 48 hours are auto-rejected"
+  }
+}

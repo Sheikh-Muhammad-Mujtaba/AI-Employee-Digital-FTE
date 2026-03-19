@@ -81,25 +81,32 @@ def is_logged_in_instagram(page) -> bool:
 
 def login_facebook(page):
     logger.info("Checking Facebook login...")
-    page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(2000)
+    page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(3000)
 
     if is_logged_in_facebook(page):
         logger.info("Already logged in to Facebook.")
         return
 
     logger.info("Logging in to Facebook...")
-    page.locator('#email').fill(FACEBOOK_EMAIL)
-    page.locator('#pass').fill(FACEBOOK_PASSWORD)
-    page.locator('[name="login"]').click()
-    page.wait_for_timeout(4000)
+    try:
+        page.locator('#email').fill(FACEBOOK_EMAIL)
+        page.locator('#pass').fill(FACEBOOK_PASSWORD)
+        page.locator('[name="login"]').click()
+        page.wait_for_timeout(5000)
+    except Exception as e:
+        logger.warning(f"Facebook automated fill failed: {e}")
 
     if not is_logged_in_facebook(page):
-        logger.warning(f"Extra verification needed (URL: {page.url}). Complete it in the browser. Waiting up to 2 minutes...")
-        for _ in range(120):
+        logger.warning(f"Extra verification or manual login needed (URL: {page.url}).")
+        logger.warning("ACTION REQUIRED: Complete login in the browser window. Waiting up to 3 minutes...")
+        for i in range(180):
             page.wait_for_timeout(1000)
             if is_logged_in_facebook(page):
+                logger.info("Facebook login successful!")
                 break
+            if i % 30 == 0:
+                logger.info(f"Still waiting for Facebook login... ({180-i}s remaining)")
         else:
             raise Exception(f"Facebook login timed out. Still on: {page.url}")
 
@@ -109,18 +116,21 @@ def login_facebook(page):
 def login_instagram(page):
     """Instagram uses Meta account — try direct login to instagram.com."""
     logger.info("Checking Instagram login...")
-    page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(2000)
+    page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(3000)
 
     if is_logged_in_instagram(page):
         logger.info("Already logged in to Instagram.")
         return
 
     logger.info("Logging in to Instagram...")
-    page.locator('input[name="username"]').fill(FACEBOOK_EMAIL)
-    page.locator('input[name="password"]').fill(FACEBOOK_PASSWORD)
-    page.locator('[type="submit"]').click()
-    page.wait_for_timeout(4000)
+    try:
+        page.locator('input[name="username"]').fill(FACEBOOK_EMAIL)
+        page.locator('input[name="password"]').fill(FACEBOOK_PASSWORD)
+        page.locator('[type="submit"]').click()
+        page.wait_for_timeout(5000)
+    except Exception as e:
+        logger.warning(f"Instagram automated fill failed: {e}")
 
     # Dismiss "Save login info" or "Turn on notifications" prompts
     for label in ["Save info", "Not Now", "Not now"]:
@@ -131,11 +141,15 @@ def login_instagram(page):
             pass
 
     if not is_logged_in_instagram(page):
-        logger.warning(f"Extra verification needed (URL: {page.url}). Complete it in the browser. Waiting up to 2 minutes...")
-        for _ in range(120):
+        logger.warning(f"Extra verification or manual login needed (URL: {page.url}).")
+        logger.warning("ACTION REQUIRED: Complete login in the browser window. Waiting up to 3 minutes...")
+        for i in range(180):
             page.wait_for_timeout(1000)
             if is_logged_in_instagram(page):
+                logger.info("Instagram login successful!")
                 break
+            if i % 30 == 0:
+                logger.info(f"Still waiting for Instagram login... ({180-i}s remaining)")
         else:
             raise Exception(f"Instagram login timed out. Still on: {page.url}")
 
@@ -151,11 +165,13 @@ def post_facebook(page, content: str):
 
     # Click the "What's on your mind?" prompt to open the composer modal
     composer_selectors = [
-        '[aria-label="What\'s on your mind?"]',
-        'div[aria-placeholder="What\'s on your mind?"]',
-        '[placeholder="What\'s on your mind?"]',
+        'div[aria-label="Create a post"]',
+        '[aria-label="Create a post"]',
+        '[placeholder*="What\'s on your mind"]',
         'div[role="button"]:has-text("What\'s on your mind")',
         'span:has-text("What\'s on your mind")',
+        'span:has-text("mind, ")',
+        'div[role="button"]:has-text("mind, ")',
     ]
     clicked = False
     for sel in composer_selectors:

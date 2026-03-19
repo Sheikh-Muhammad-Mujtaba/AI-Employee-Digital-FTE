@@ -43,6 +43,8 @@ DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
 
 LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_PERSON_URN   = os.getenv("LINKEDIN_PERSON_URN", "")
+LINKEDIN_EMAIL        = os.getenv("LINKEDIN_EMAIL", "")
+LINKEDIN_PASSWORD     = os.getenv("LINKEDIN_PASSWORD", "")
 MAX_POSTS_PER_DAY     = int(os.getenv("MAX_POSTS_PER_DAY", "3"))
 
 # ── Queue file format ─────────────────────────────────────────────────────────
@@ -268,12 +270,12 @@ def main():
     import logging
     log = logging.getLogger("LinkedInWatcher")
 
-    # Safely bypass LinkedIn if credentials are not configured
-    if not LINKEDIN_ACCESS_TOKEN or LINKEDIN_ACCESS_TOKEN.startswith("PASTE_"):
+    # Safely bypass LinkedIn if neither API nor Browser credentials are configured
+    if not LINKEDIN_ACCESS_TOKEN and (not LINKEDIN_EMAIL or not LINKEDIN_PASSWORD):
         log.warning(
-            "LinkedIn integration disabled — LINKEDIN_ACCESS_TOKEN not set in .env. "
+            "LinkedIn integration disabled — No credentials found in .env. "
             "Queue monitoring and post scheduling will be skipped. "
-            "Set LINKEDIN_ACCESS_TOKEN and LINKEDIN_PERSON_URN in .env to enable."
+            "Set LINKEDIN_ACCESS_TOKEN or LINKEDIN_EMAIL/LINKEDIN_PASSWORD in .env to enable."
         )
         log.info("LinkedIn Watcher exiting (no credentials). Safe to ignore this message.")
         return

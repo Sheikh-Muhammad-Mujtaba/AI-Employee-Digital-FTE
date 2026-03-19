@@ -1,0 +1,8 @@
+{
+  "enabledMcpjsonServers": [
+    "email",
+    "erpnext",
+    "browser",
+    "windows-mcp"
+  ]
+}

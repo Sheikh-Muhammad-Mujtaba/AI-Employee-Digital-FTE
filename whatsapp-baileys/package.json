@@ -1,0 +1,17 @@
+{
+  "name": "whatsapp-baileys-watcher",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "WhatsApp watcher & automation using Baileys for the AI Employee Digital FTE",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "baileys": "^7.0.0-rc.9",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

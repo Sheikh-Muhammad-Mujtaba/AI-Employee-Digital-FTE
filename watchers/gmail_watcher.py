@@ -124,7 +124,6 @@ class GmailWatcher(BaseWatcher):
 
     Filters applied when fully authenticated:
       - is:unread
-      - is:important  (Gmail's smart priority inbox)
       - NOT in:sent   (to avoid processing sent mail)
     """
 
@@ -219,9 +218,11 @@ class GmailWatcher(BaseWatcher):
             return []
 
         try:
+            query = "is:unread -in:sent"
+            self.logger.debug(f"Polling Gmail with query: '{query}'")
             result = self.service.users().messages().list(
                 userId="me",
-                q="is:unread is:important -in:sent",
+                q=query,
                 maxResults=20,
             ).execute()
         except Exception as e:
@@ -230,7 +231,7 @@ class GmailWatcher(BaseWatcher):
 
         messages = result.get("messages", [])
         new = [m for m in messages if m["id"] not in self._processed_ids]
-        self.logger.info(f"Gmail: {len(messages)} unread important, {len(new)} new.")
+        self.logger.info(f"Gmail: {len(messages)} unread, {len(new)} new (Query: 'is:unread -in:sent').")
         return new
 
     def create_action_file(self, message: dict) -> Path:

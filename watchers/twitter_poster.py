@@ -75,11 +75,16 @@ def save_cookies(context):
 
 
 def is_logged_in(page):
-    return "x.com/home" in page.url or "twitter.com/home" in page.url
+    try:
+        # Wait for the sidebar profile link or post button to appear (only visible if logged in)
+        page.locator('[data-testid="AppTabBar_Profile_Link"], [data-testid="SideNav_NewTweet_Button"]').first.wait_for(state="visible", timeout=8000)
+        return True
+    except Exception:
+        return False
 
 
 def setup(context, page):
-    """Open browser for manual login, save cookies when done."""
+    """Open browser for automated or manual login, save cookies when done."""
     load_cookies(context)
     page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
     page.wait_for_timeout(2000)
@@ -89,20 +94,61 @@ def setup(context, page):
         save_cookies(context)
         return
 
-    logger.warning("ACTION REQUIRED: Log in to X.com in the browser window. Waiting up to 3 minutes...")
-    page.goto("https://x.com/login", wait_until="domcontentloaded", timeout=30000)
-    for _ in range(180):
-        page.wait_for_timeout(1000)
-        if is_logged_in(page):
-            break
-    else:
-        raise Exception("Login timed out.")
+    logger.info("Not logged in. Starting automated login...")
+    page.goto("https://x.com/i/flow/login", wait_until="networkidle", timeout=30000)
+    
+    try:
+        # Step 1: Username/Email
+        logger.info("Entering email/username...")
+        email_input = page.locator('input[autocomplete="username"]')
+        email_input.wait_for(state="visible", timeout=10000)
+        email_input.fill(TWITTER_EMAIL)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(3000)
+
+        # Step 1.5: Potential Username confirmation (if X suspects something)
+        if "confirm your identity" in page.content().lower() or page.locator('input[data-testid="ocfEnterTextTextInput"]').is_visible():
+            logger.info("Username confirmation required...")
+            user_confirm = os.getenv("TWITTER_USERNAME", "")
+            if user_confirm:
+                page.locator('input[data-testid="ocfEnterTextTextInput"]').fill(user_confirm)
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(3000)
+            else:
+                logger.warning("Username confirmation required but TWITTER_USERNAME not set in .env")
+
+        # Step 2: Password
+        logger.info("Entering password...")
+        pass_input = page.locator('input[name="password"]')
+        pass_input.wait_for(state="visible", timeout=10000)
+        pass_input.fill(TWITTER_PASSWORD)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(5000)
+
+    except Exception as e:
+        logger.warning(f"Automated login attempt encountered an issue: {e}. Falling back to manual wait.")
+
+    if not is_logged_in(page):
+        logger.warning("ACTION REQUIRED: Log in to X.com in the browser window. Waiting up to 3 minutes...")
+        for i in range(180):
+            page.wait_for_timeout(1000)
+            if is_logged_in(page):
+                logger.info("Login successful!")
+                break
+            if i % 30 == 0:
+                logger.info(f"Still waiting for login... ({180-i}s remaining)")
+        else:
+            raise Exception("Login timed out.")
 
     save_cookies(context)
     logger.info("Login successful. Cookies saved.")
 
 
 def post_tweet(context, page, content: str):
+    if len(content) > 280:
+        logger.warning(f"Tweet length is {len(content)}. Truncating to 280 characters.")
+        content = content[:277] + "..."
+
     if not COOKIES_FILE.exists():
         raise Exception("No saved cookies. Run: python twitter_poster.py --setup")
 
@@ -168,8 +214,9 @@ def main():
             print(json.dumps({"success": False, "error": "No content provided"}))
             sys.exit(1)
         if len(content) > MAX_TWEET_LENGTH:
-            print(json.dumps({"success": False, "error": f"Tweet too long: {len(content)}/{MAX_TWEET_LENGTH}"}))
-            sys.exit(1)
+            # Replaced exit with automatic truncation
+            logger.warning(f"Tweet length is {len(content)}. Truncating to 280 characters.")
+            content = content[:MAX_TWEET_LENGTH-3] + "..."
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post: {content}")
             print(json.dumps({"success": True, "dry_run": True}))

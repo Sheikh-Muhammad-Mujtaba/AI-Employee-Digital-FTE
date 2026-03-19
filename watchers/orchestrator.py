@@ -43,6 +43,58 @@ LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_PERSON_URN  = os.getenv("LINKEDIN_PERSON_URN", "")
 MAX_EMAILS_PER_HOUR  = int(os.getenv("MAX_EMAILS_PER_HOUR", "10"))
 
+# ── Agent selection (claude | gemini | qwen) ──────────────────────────────────
+
+AGENT = os.getenv("AGENT", "claude").lower().strip()
+
+# Agent CLI configs: { name: { cmd: [...], prompt_flag: str, extra_flags: [...] } }
+AGENT_CONFIGS: dict[str, dict] = {
+    "claude": {
+        "cmd": ["claude"],
+        "prompt_flag": "--print",
+        "extra_flags": ["--dangerously-skip-permissions"],
+        "mcp_flag": "--mcp-config",
+    },
+    "gemini": {
+        "cmd": ["gemini"],
+        "prompt_flag": "-p",
+        "extra_flags": [],
+        "mcp_flag": None,  # gemini reads from ~/.gemini/settings.json
+    },
+    "qwen": {
+        "cmd": ["qwen"],
+        "prompt_flag": "--prompt",
+        "extra_flags": [],
+        "mcp_flag": "--mcp-config",
+    },
+}
+
+def _resolve_agent_cmd(agent_name: str) -> list[str]:
+    """Resolve the agent CLI command, checking common install locations on Windows."""
+    config = AGENT_CONFIGS.get(agent_name)
+    if not config:
+        raise ValueError(f"Unknown AGENT: {agent_name}. Must be one of: {', '.join(AGENT_CONFIGS.keys())}")
+
+    base_cmd = config["cmd"][0]
+
+    # Check if available on PATH first
+    import shutil
+    resolved = shutil.which(base_cmd)
+    if resolved:
+        return [resolved]
+
+    # Windows: check common npm global install locations
+    npm_paths = [
+        os.path.expandvars(rf"%APPDATA%\npm\{base_cmd}.cmd"),
+        os.path.expandvars(rf"%USERPROFILE%\AppData\Roaming\npm\{base_cmd}.cmd"),
+    ]
+    for p in npm_paths:
+        if os.path.isfile(p):
+            return [p]
+
+    # Fallback: return bare command and let subprocess raise FileNotFoundError
+    return [base_cmd]
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 import logging
@@ -87,7 +139,7 @@ def update_dashboard(vault: Path):
             return 0
         return len([f for f in folder.iterdir() if f.is_file() and not f.name.startswith(".")])
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M UTC")
     stats = {
         "inbox":            count_files(vault / "Inbox"),
         "needs_action":     count_md(vault / "Needs_Action"),
@@ -112,6 +164,43 @@ def update_dashboard(vault: Path):
         text,
         flags=re.DOTALL,
     )
+
+    # Recent Activity (last 10 events from logs)
+    logs_dir = vault / "Logs"
+    recent_events = []
+    if logs_dir.exists():
+        # Get last 2 log files (today and yesterday)
+        log_files = sorted([f for f in logs_dir.glob("*.jsonl")], reverse=True)[:2]
+        for lf in log_files:
+            try:
+                content = lf.read_text(encoding="utf-8").strip()
+                if content:
+                    lines = content.splitlines()
+                    for line in reversed(lines):
+                        try:
+                            evt = json.loads(line)
+                            recent_events.append(evt)
+                        except: continue
+                        if len(recent_events) >= 10: break
+            except: pass
+            if len(recent_events) >= 10: break
+
+    act_md = "## Recent Activity\n\n| Time | Event | Details |\n|------|-------|---------|\n"
+    for e in recent_events:
+        t = e.get("timestamp", "")[:16].replace("T", " ")
+        ev = e.get("action_type", e.get("event", "event")).replace("_", " ").title()
+        # Build details string from other fields
+        ignore = ["timestamp", "actor", "action_type", "event"]
+        det = ", ".join([f"{k}={v}" for k, v in e.items() if k not in ignore])
+        act_md += f"| {t} | {ev} | {det} |\n"
+    
+    text = re.sub(
+        r"## Recent Activity.*?(?=\n---|\Z)",
+        lambda _: act_md + "\n",
+        text,
+        flags=re.DOTALL,
+    )
+
     text = re.sub(r"last_updated: .*", f"last_updated: {now}", text)
 
     dashboard.write_text(text, encoding="utf-8")
@@ -126,7 +215,7 @@ def update_dashboard(vault: Path):
 def write_log(vault: Path, entry: dict):
     logs_dir = vault / "Logs"
     logs_dir.mkdir(exist_ok=True)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
     log_file = logs_dir / f"{today}.jsonl"
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
@@ -134,14 +223,14 @@ def write_log(vault: Path, entry: dict):
 
 def log_event(vault: Path, action_type: str, **kwargs):
     write_log(vault, {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "actor": "orchestrator",
         "action_type": action_type,
         **kwargs,
     })
 
 
-# ── Claude trigger ────────────────────────────────────────────────────────────
+# ── Agent trigger (multi-agent: claude / gemini / qwen) ──────────────────────
 
 SILVER_PROMPT_TEMPLATE = """You are the AI Employee (Silver Tier). You work autonomously to process tasks.
 
@@ -155,6 +244,7 @@ Task file to process: {action_file}
 3. Act based on the task type:
 
 ### If type == "email":
+   - If the sender asks for a quotation, invoice, or financial document, you MUST first use your ERPNext tools to search for or generate the requested document BEFORE drafting your reply. Include the relevant details in your drafted reply.
    - Draft a professional reply to the email.
    - Create a file in {vault}/Pending_Approval/ named REPLY_<timestamp>.md with this exact format:
      ```
@@ -175,6 +265,23 @@ Task file to process: {action_file}
    - Generate the briefing content.
    - Write it to {vault}/Briefings/ with filename BRIEFING_<date>.md
    - Move the original task file to {vault}/Done/
+
+### If type == "whatsapp":
+   - If the sender asks for a quotation, invoice, or financial document, you MUST first use your ERPNext tools to search for or generate the requested document BEFORE drafting your reply. Include the relevant details in your drafted reply.
+   - Draft a helpful and extremely concise reply to the WhatsApp message.
+   - If there is a `## User Feedback` section present at the bottom of the file, strongly follow those instructions to revise your previous draft.
+   - Create a file in {vault}/Pending_Approval/ named REPLY_WA_<timestamp>.md with this exact format:
+     ```
+     ---
+     action: send_whatsapp
+     jid: <sender's jid from the task file>
+     created: <current UTC datetime in ISO format>
+     ---
+
+     <your drafted whatsapp reply here>
+     ---
+     ```
+   - Move the original task file from {action_file} to {vault}/Done/
 
 ### If type == "linkedin_post":
    - Use the /post-linkedin skill to draft the post.
@@ -201,6 +308,39 @@ Task file to process: {action_file}
    - Use the /accounting-audit skill to pull data and write a snapshot.
    - Move the original task file to {vault}/Done/
 
+### If type == "generate_plan":
+   - Read the user's prompt in the task file to understand what plan needs to be created.
+   - Draft a comprehensive plan with a Title, Description, Steps, and Due Date if applicable.
+   - Create a file in {vault}/Pending_Approval/ named PLAN_DRAFT_<timestamp>.md with this exact format:
+     ```
+     ---
+     action: save_plan
+     title: <Drafted Title>
+     created: <current UTC datetime>
+     due_date: <Drafted Due Date or TBD>
+     status: draft
+     ---
+
+     <your drafted plan body containing Description and Steps>
+     ```
+   - Move the original task file from {action_file} to {vault}/Done/
+
+### If type == "accounting_request":
+   - Read the user's prompt in the task file to understand the accounting task (e.g. review invoices, create invoice).
+   - Use your ERPNext skills/tools to perform the requested actions.
+   - Draft a summary of your actions and findings.
+   - Create a file in {vault}/Pending_Approval/ named ACCOUNTING_REPORT_<timestamp>.md with this exact format:
+     ```
+     ---
+     action: save_accounting_report
+     title: Accounting Task Report
+     created: <current UTC datetime>
+     ---
+
+     <your drafted summary body>
+     ```
+   - Move the original task file from {action_file} to {vault}/Done/
+
 ### For any other task:
    - Handle it appropriately and move the file to {vault}/Done/
 
@@ -212,36 +352,94 @@ Task file to process: {action_file}
 Output <promise>TASK_COMPLETE</promise> when finished.
 """
 
-def trigger_claude(vault: Path, action_file: Path):
+def trigger_agent(vault: Path, action_file: Path):
+    """Trigger the selected AI agent (AGENT env var) to process a task file.
+
+    Supported agents:
+      - claude  → claude --print --dangerously-skip-permissions <prompt>
+      - gemini  → gemini -p <prompt>
+      - qwen    → qwen --prompt <prompt>
+    """
     prompt = SILVER_PROMPT_TEMPLATE.format(
         vault=str(vault),
         action_file=str(action_file),
     )
 
     if DRY_RUN:
-        logger.info(f"[DRY RUN] Would trigger Claude for: {action_file.name}")
+        logger.info(f"[DRY RUN] Would trigger {AGENT} for: {action_file.name}")
         return
 
-    logger.info(f"Triggering Claude Code (Silver) for: {action_file.name}")
+    config = AGENT_CONFIGS.get(AGENT)
+    if not config:
+        logger.error(f"Unknown AGENT='{AGENT}'. Supported: {', '.join(AGENT_CONFIGS.keys())}")
+        return
+
+    agent_cmd = _resolve_agent_cmd(AGENT)
+    cmd = [*agent_cmd, *config["extra_flags"]]
+
+    # Add MCP config if the agent supports it
+    mcp_json = Path(__file__).parent.parent / "mcp.json"
+    if config["mcp_flag"] and mcp_json.exists():
+        cmd.extend([config["mcp_flag"], str(mcp_json)])
+
+    # Write prompt to a temporary file to avoid Windows CMD length limits (8192 chars)
+    prompt_file = vault / f".temp_prompt_{action_file.name}.txt"
+    prompt_file.write_text(prompt, encoding="utf-8")
+    short_prompt = f"Please read and perfectly execute the instructions strictly written in the file: {prompt_file.absolute()}"
+
+    # Add prompt
+    cmd.extend([config["prompt_flag"], short_prompt])
+
+    logger.info(f"Triggering {AGENT.upper()} for: {action_file.name}")
     try:
-        result = subprocess.run(
-            [r"C:\Users\Khali\AppData\Roaming\npm\claude.cmd", "--print", "--dangerously-skip-permissions", prompt],
-            cwd=str(vault),
-            capture_output=True,
-            text=True,
-            timeout=600,  # Silver tasks can take longer (planning + multi-step)
-            encoding="utf-8",
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(vault),
+                capture_output=True,
+                text=True,
+                timeout=600,
+                encoding="utf-8",
+                errors="replace",
+            )
+        finally:
+            # Cleanup temporary prompt file
+            if prompt_file.exists():
+                prompt_file.unlink()
+
         if result.returncode == 0:
-            logger.info(f"Claude completed: {action_file.name}")
-            if "TASK_COMPLETE" not in result.stdout:
-                logger.warning(f"Claude finished but TASK_COMPLETE not found in output for: {action_file.name}")
+            logger.info(f"{AGENT.upper()} completed: {action_file.name}")
+            # Log a snippet of the agent's thought process/output
+            snippet = result.stdout[:500].strip() + ("..." if len(result.stdout) > 500 else "")
+            log_event(vault, "agent_processed", agent=AGENT, file=action_file.name, output_snippet=snippet)
+
+            # QWEN robustness: sometimes it skips the tag but outputs the files.
+            # We check if the files were created in /Pending_Approval or /Done
+            # But safer to just look for common completion strings.
+            output_lower = result.stdout.lower()
+            if "task_complete" not in output_lower and "done" not in output_lower:
+                logger.warning(f"{AGENT.upper()} finished but completion marker not found in output for: {action_file.name}")
+            
+            # Safety fallback: if the agent didn't move the file (common fail), 
+            # we move it to Done if we see evidence of work.
+            if action_file.exists() and ("pending_approval" in output_lower or "done" in output_lower):
+                logger.info(f"Safety move for {action_file.name} to /Done")
+                done_dir = vault / "Done"
+                done_dir.mkdir(exist_ok=True)
+                action_file.rename(done_dir / action_file.name)
+
         else:
-            logger.error(f"Claude error (code {result.returncode}): {result.stderr[:300]}")
+            logger.error(f"{AGENT.upper()} error (code {result.returncode}): {result.stderr[:300]}")
     except FileNotFoundError:
-        logger.error("'claude' not found. Ensure Claude Code is installed: npm install -g @anthropic/claude-code")
+        install_hints = {
+            "claude": "npm install -g @anthropic/claude-code",
+            "gemini": "npm install -g @google/gemini-cli",
+            "qwen": "npm install -g @qwen-code/qwen-code@latest",
+        }
+        hint = install_hints.get(AGENT, f"Install the {AGENT} CLI")
+        logger.error(f"'{AGENT}' CLI not found. Install with: {hint}")
     except subprocess.TimeoutExpired:
-        logger.error(f"Claude timed out (10 min) for: {action_file.name}")
+        logger.error(f"{AGENT.upper()} timed out (10 min) for: {action_file.name}")
 
 
 # ── Approved action executor ──────────────────────────────────────────────────
@@ -252,6 +450,7 @@ class ApprovedActionExecutor:
 
     Supported action types:
       - send_email      → calls Email MCP server
+      - send_whatsapp   → calls WhatsApp Baileys API directly
       - post_linkedin   → calls linkedin_poster.py
       - post_twitter    → calls twitter_poster.py
       - post_facebook   → calls meta_poster.py --platform facebook
@@ -273,25 +472,38 @@ class ApprovedActionExecutor:
         return True
 
     def execute(self, approved_file: Path):
+        action_type = "unknown"
         try:
             text = approved_file.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            logger.warning(f"Approved file already processed/moved: {approved_file.name}")
-            return
-        fields = parse_frontmatter(text)
-        action_type = fields.get("action", "") or fields.get("type", "unknown")
-        # Normalise type → action name
-        type_map = {"twitter_post": "post_twitter", "facebook_post": "post_facebook", "instagram_post": "post_instagram"}
-        action_type = type_map.get(action_type, action_type)
+            fields = parse_frontmatter(text)
+            action_type = fields.get("action", "") or fields.get("type", "unknown")
+            
+            # Normalise type → action name
+            type_map = {
+                "linkedin_post": "post_linkedin", 
+                "twitter_post": "post_twitter", 
+                "facebook_post": "post_facebook", 
+                "instagram_post": "post_instagram",
+                "save_plan": "save_plan",
+                "save_accounting_report": "save_accounting_report",
+                "whatsapp": "send_whatsapp",
+                "email": "send_email",
+                "erpnext_audit": "acknowledge_only"
+            }
+            action_type = type_map.get(action_type, action_type)
 
-        logger.info(f"Executing approved action: {action_type} — {approved_file.name}")
+            logger.info(f"Executing approved action: {action_type} — {approved_file.name}")
 
-        done_dir = self.vault / "Done"
-        done_dir.mkdir(exist_ok=True)
+            done_dir = self.vault / "Done"
+            done_dir.mkdir(exist_ok=True)
 
-        try:
-            if action_type == "send_email":
+            if action_type == "acknowledge_only":
+                logger.info(f"Action '{action_type}' manually acknowledged — skipping automation.")
+                log_event(self.vault, "manual_acknowledgement", file=approved_file.name)
+            elif action_type == "send_email":
                 self._execute_send_email(approved_file, fields, text)
+            elif action_type == "send_whatsapp":
+                self._execute_send_whatsapp(approved_file, fields, text)
             elif action_type == "post_linkedin":
                 self._execute_post_linkedin(approved_file, fields, text)
             elif action_type == "post_twitter":
@@ -300,6 +512,22 @@ class ApprovedActionExecutor:
                 self._execute_post_facebook(approved_file, fields, text)
             elif action_type == "post_instagram":
                 self._execute_post_instagram(approved_file, fields, text)
+            elif action_type == "save_plan":
+                dest_dir = self.vault / "Plans"
+                dest_dir.mkdir(exist_ok=True)
+                dest = dest_dir / approved_file.name
+                approved_file.rename(dest)
+                logger.info(f"Plan saved to /Plans: {approved_file.name}")
+                update_dashboard(self.vault)
+                return
+            elif action_type == "save_accounting_report":
+                dest_dir = self.vault / "Accounting"
+                dest_dir.mkdir(exist_ok=True)
+                dest = dest_dir / approved_file.name
+                approved_file.rename(dest)
+                logger.info(f"Accounting report saved to /Accounting: {approved_file.name}")
+                update_dashboard(self.vault)
+                return
             else:
                 logger.info(f"Action type '{action_type}' acknowledged — no automated execution defined.")
                 log_event(self.vault, "action_acknowledged", file=approved_file.name, action=action_type)
@@ -307,7 +535,7 @@ class ApprovedActionExecutor:
             # Move to Done (add suffix if filename already exists)
             dest = done_dir / approved_file.name
             if dest.exists():
-                ts = datetime.utcnow().strftime("%H%M%S")
+                ts = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%H%M%S")
                 dest = done_dir / f"{approved_file.stem}_{ts}{approved_file.suffix}"
             try:
                 approved_file.rename(dest)
@@ -377,8 +605,42 @@ class ApprovedActionExecutor:
             else:
                 logger.error(f"Email MCP failed: {result.stderr[:2000]}")
                 log_event(self.vault, "email_failed", to=to, error=result.stderr[:2000])
+                raise RuntimeError(f"Email failed: {result.stderr[:500]}")
         except subprocess.TimeoutExpired:
             logger.error("Email MCP timed out.")
+            raise RuntimeError("Email timeout")
+
+    def _execute_send_whatsapp(self, approved_file: Path, fields: dict, text: str):
+        import requests
+        
+        jid = fields.get("jid", "")
+        # Extract body after ---
+        body_match = re.search(r"---\n\n(.+?)(?:\n\n---|$)", text, re.DOTALL)
+        body = body_match.group(1).strip() if body_match else ""
+
+        if not jid or not body:
+            logger.error(f"WhatsApp missing jid or body in {approved_file.name}")
+            raise ValueError("WhatsApp missing jid or body")
+
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would send WA to {jid}:\n{body[:100]}")
+            log_event(self.vault, "whatsapp_sent_dry_run", jid=jid, text=body[:100])
+            return
+
+        try:
+            # Baileys default port is 3001
+            resp = requests.post("http://localhost:3001/send", json={"jid": jid, "text": body}, timeout=10)
+            if resp.status_code == 200:
+                logger.info(f"WhatsApp sent to {jid}")
+                log_event(self.vault, "whatsapp_sent", jid=jid, approved_by="human", result="success")
+            else:
+                logger.error(f"WhatsApp sending failed: {resp.text}")
+                log_event(self.vault, "whatsapp_failed", jid=jid, error=resp.text)
+                raise RuntimeError(f"WhatsApp failed: {resp.text}")
+        except Exception as e:
+            logger.error(f"WhatsApp Baileys connection error: {e}")
+            log_event(self.vault, "whatsapp_failed", jid=jid, error=str(e))
+            raise RuntimeError(f"WhatsApp connection error: {e}")
 
     def _execute_post_linkedin(self, approved_file: Path, fields: dict, text: str):
         # Extract post content between the --- delimiters
@@ -393,27 +655,38 @@ class ApprovedActionExecutor:
         poster_script = Path(__file__).parent / "linkedin_poster.py"
         try:
             result = subprocess.run(
-                ["py", "-3.13", str(poster_script), "--post"],
+                [sys.executable, str(poster_script), "--post"],
                 input=json.dumps({"content": post_content}),
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=300, # Increased to 5 mins for manual login
                 encoding="utf-8",
             )
+            # Log script stdout/stderr for debugging
+            if result.stdout: logger.info(f"LinkedIn Output: {result.stdout.strip()}")
+            if result.stderr: logger.warning(f"LinkedIn Error: {result.stderr.strip()}")
+
             output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
             if output.get("success"):
                 logger.info("LinkedIn post published via Playwright.")
                 log_event(self.vault, "linkedin_posted", approved_by="human", result="success")
             else:
+                err = output.get("error", "Unknown error")
+                logger.error(f"LinkedIn post failed: {err}")
+                log_event(self.vault, "linkedin_failed", error=err)
+                raise RuntimeError(f"LinkedIn failed: {err}")
                 err = output.get("error", result.stderr[:2000])
                 logger.error(f"LinkedIn poster failed: {err}")
                 log_event(self.vault, "linkedin_failed", error=err)
+                raise RuntimeError(f"LinkedIn failed: {err}")
         except subprocess.TimeoutExpired:
             logger.error("LinkedIn poster timed out.")
             log_event(self.vault, "linkedin_failed", error="timeout")
+            raise RuntimeError("LinkedIn timeout")
         except Exception as e:
             logger.error(f"LinkedIn poster error: {e}")
             log_event(self.vault, "linkedin_failed", error=str(e))
+            raise RuntimeError(f"LinkedIn poster error: {e}")
 
 
     def _execute_post_twitter(self, approved_file: Path, fields: dict, text: str):
@@ -422,7 +695,7 @@ class ApprovedActionExecutor:
 
         if not post_content:
             logger.error("Twitter: post content is empty — check the approval file format.")
-            return
+            raise ValueError("Twitter: post content is empty")
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to Twitter:\n{post_content[:280]}")
@@ -432,10 +705,18 @@ class ApprovedActionExecutor:
         poster_script = Path(__file__).parent / "twitter_poster.py"
         try:
             result = subprocess.run(
-                ["python", str(poster_script), "--post"],
+                [sys.executable, str(poster_script), "--post"],
                 input=json.dumps({"content": post_content}),
-                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+                capture_output=True,
+                text=True,
+                timeout=300, # Increased to 5 mins for manual login
+                encoding="utf-8",
+                errors="replace",
             )
+            # Log script stdout/stderr for debugging
+            if result.stdout: logger.info(f"Twitter Output: {result.stdout.strip()}")
+            if result.stderr: logger.warning(f"Twitter Error: {result.stderr.strip()}")
+
             output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
             if output.get("success"):
                 logger.info("Twitter post published via Playwright.")
@@ -444,12 +725,15 @@ class ApprovedActionExecutor:
                 err = output.get("error", result.stderr[:2000])
                 logger.error(f"Twitter poster failed: {err}")
                 log_event(self.vault, "twitter_failed", error=err)
+                raise RuntimeError(f"Twitter failed: {err}")
         except subprocess.TimeoutExpired:
             logger.error("Twitter poster timed out.")
             log_event(self.vault, "twitter_failed", error="timeout")
+            raise RuntimeError("Twitter timeout")
         except Exception as e:
             logger.error(f"Twitter poster error: {e}")
             log_event(self.vault, "twitter_failed", error=str(e))
+            raise RuntimeError(f"Twitter poster error: {e}")
 
     def _execute_post_facebook(self, approved_file: Path, fields: dict, text: str):
         parts = text.split("---")
@@ -463,10 +747,14 @@ class ApprovedActionExecutor:
         poster_script = Path(__file__).parent / "meta_poster.py"
         try:
             result = subprocess.run(
-                ["py", "-3.13", str(poster_script), "--platform", "facebook", "--post"],
+                [sys.executable, str(poster_script), "--platform", "facebook", "--post"],
                 input=json.dumps({"content": post_content}),
-                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+                capture_output=True, text=True, timeout=300, encoding="utf-8", errors="replace",
             )
+            # Log script stdout/stderr for debugging
+            if result.stdout: logger.info(f"Facebook Output: {result.stdout.strip()}")
+            if result.stderr: logger.warning(f"Facebook Error: {result.stderr.strip()}")
+
             output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
             if output.get("success"):
                 logger.info("Facebook post published via Playwright.")
@@ -475,12 +763,15 @@ class ApprovedActionExecutor:
                 err = output.get("error", result.stderr[:2000])
                 logger.error(f"Facebook poster failed: {err}")
                 log_event(self.vault, "facebook_failed", error=err)
+                raise RuntimeError(f"Facebook failed: {err}")
         except subprocess.TimeoutExpired:
             logger.error("Facebook poster timed out.")
             log_event(self.vault, "facebook_failed", error="timeout")
+            raise RuntimeError("Facebook timeout")
         except Exception as e:
             logger.error(f"Facebook poster error: {e}")
             log_event(self.vault, "facebook_failed", error=str(e))
+            raise RuntimeError(f"Facebook poster error: {e}")
 
     def _execute_post_instagram(self, approved_file: Path, fields: dict, text: str):
         parts = text.split("---")
@@ -495,15 +786,19 @@ class ApprovedActionExecutor:
         if not image_url:
             logger.error("Instagram post missing image_url in frontmatter — skipping.")
             log_event(self.vault, "instagram_failed", error="missing_image_url", file=approved_file.name)
-            return
+            raise ValueError("Instagram missing image_url")
 
         poster_script = Path(__file__).parent / "meta_poster.py"
         try:
             result = subprocess.run(
-                ["py", "-3.13", str(poster_script), "--platform", "instagram", "--post"],
+                [sys.executable, str(poster_script), "--platform", "instagram", "--post"],
                 input=json.dumps({"content": post_content, "image_url": image_url}),
-                capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+                capture_output=True, text=True, timeout=300, encoding="utf-8", errors="replace",
             )
+            # Log script stdout/stderr for debugging
+            if result.stdout: logger.info(f"Instagram Output: {result.stdout.strip()}")
+            if result.stderr: logger.warning(f"Instagram Error: {result.stderr.strip()}")
+
             output = json.loads(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else {}
             if output.get("success"):
                 logger.info("Instagram post published via Playwright.")
@@ -512,12 +807,15 @@ class ApprovedActionExecutor:
                 err = output.get("error", result.stderr[:2000])
                 logger.error(f"Instagram poster failed: {err}")
                 log_event(self.vault, "instagram_failed", error=err)
+                raise RuntimeError(f"Instagram failed: {err}")
         except subprocess.TimeoutExpired:
             logger.error("Instagram poster timed out.")
             log_event(self.vault, "instagram_failed", error="timeout")
+            raise RuntimeError("Instagram timeout")
         except Exception as e:
             logger.error(f"Instagram poster error: {e}")
             log_event(self.vault, "instagram_failed", error=str(e))
+            raise RuntimeError(f"Instagram poster error: {e}")
 
 
 # ── Approval expiry handler ───────────────────────────────────────────────────
@@ -530,7 +828,7 @@ def expire_stale_approvals(vault: Path):
         return
 
     rejected_dir.mkdir(exist_ok=True)
-    cutoff = datetime.utcnow() - timedelta(hours=APPROVAL_EXPIRY_HOURS)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=APPROVAL_EXPIRY_HOURS)
 
     for f in pending_dir.iterdir():
         if not f.is_file() or f.name.startswith("."):
@@ -576,7 +874,7 @@ class NeedsActionHandler(FileSystemEventHandler):
             if not action_file.exists():
                 continue
             log_event(self.vault, "needs_action_detected", file=action_file.name)
-            trigger_claude(self.vault, action_file)
+            trigger_agent(self.vault, action_file)
             update_dashboard(self.vault)
 
 
@@ -634,7 +932,7 @@ def main():
         (vault / folder).mkdir(exist_ok=True)
 
     mode = "DRY RUN" if DRY_RUN else "LIVE"
-    logger.info(f"Orchestrator (Silver) starting [{mode}] — vault: {vault}")
+    logger.info(f"Orchestrator (Gold) starting [{mode}] — Agent: {AGENT.upper()} — vault: {vault}")
 
     executor = ApprovedActionExecutor(vault)
 
@@ -645,6 +943,14 @@ def main():
     observer.schedule(needs_handler, str(vault / "Needs_Action"), recursive=False)
     observer.schedule(approved_handler, str(vault / "Approved"), recursive=False)
     observer.start()
+
+    # Process any files already sitting in /Needs_Action/ before we started
+    needs_action_dir = vault / "Needs_Action"
+    for f in sorted(needs_action_dir.iterdir()):
+        if f.is_file() and not f.name.startswith("."):
+            logger.info(f"Startup: found existing needs_action file: {f.name}")
+            log_event(vault, "needs_action_detected", file=f.name)
+            trigger_agent(vault, f)
 
     # Process any files already sitting in /Approved/ before we started
     approved_dir = vault / "Approved"

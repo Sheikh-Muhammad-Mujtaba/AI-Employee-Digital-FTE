@@ -1,167 +1,338 @@
-# AI Employee Digital FTE — Gold Tier
+# AI Employee Digital FTE — Platinum Tier
+
+> Your life and business on autopilot. Always-On Cloud + Local Executive. Agent-driven, human-in-the-loop.
+
+---
 
 ## Overview
 
-This is the Gold Tier documentation for the AI Employee Digital FTE project (AI-Employee-Digital-FTE).
+A **Platinum Tier** Digital FTE (Full-Time Equivalent) that runs 24/7 with Cloud + Local architecture:
 
-Gold Tier adds full social posting automation + CRM/ERP integration on top of Silver behavior. It supports:
-- Inbox file ingestion (`/Inbox`)
-- Task generation (`/Needs_Action`)
-- AI processing via Claude (`orchestrator.py`)
-- Approval pipeline (`/Pending_Approval`, `/Approved`)
-- Complete action executor flow via API and headless browser
-- LinkedIn, Twitter/X, Facebook, Instagram publishing
-- Gmail ingestion
-- ERPNext watcher integration
-- Dashboard and structured logs
+### Local Machine (Your Desktop)
+- **Dashboard** — Web-based control panel (Next.js + FastAPI)
+- **WhatsApp Automation** — Baileys v7 with full session control
+- **Human Approval** — Review and approve all Cloud drafts
+- **Payment MCP** — Execute payments locally (secure)
+- **Local Orchestrator** — Executes approved actions
 
-## Repository structure
+### Cloud VM (Oracle/AWS Free Tier)
+- **Gmail Watcher** — Polls Gmail, creates drafts (never sends)
+- **Social Watchers** — LinkedIn, Twitter/X, Facebook, Instagram (drafts only)
+- **Odoo Community** — Accounting ERP (read-only snapshots)
+- **Cloud Agent** — Qwen/Claude for draft generation
+- **Always-On** — 24/7 monitoring and draft creation
 
-- `.claude/skills/` – skill templates for AI-generated tasks and automations
-- `AI_Employee_Vault/` – vault state and website content
-  - core docs: `Company_Handbook.md`, `Dashboard.md`, `Business_Goals.md`
-  - workflow folders: `Inbox`, `Needs_Action`, `Pending_Approval`, `Approved`, `Done`, `Plans`, `Rejected`, `Logs`, `Briefings`
-- `watchers/` – automation scripts:
-  - `base_watcher.py`
-  - `filesystem_watcher.py`
-  - `orchestrator.py` (Gold orchestration)
-  - `gmail_watcher.py`
-  - `linkedin_watcher.py`
-  - `linkedin_poster.py`
-  - `twitter_watcher.py`
-  - `twitter_poster.py`
-  - `facebook_watcher.py` / `meta_poster.py`
-  - `erpnext_watcher.py`
-  - `scheduler.py`
-  - `log_summary.py`
-- `email-mcp/` – email microservice for `send_email` actions
-- `requirements.txt`, `.env.example`, `mcp.json`, `start.bat`
+### Key Features
+- **Work-Zone Separation** — Cloud drafts, Local executes
+- **Git Vault Sync** — Secure sync between Cloud and Local
+- **Security First** — Secrets never sync (.env, auth_info, cookies)
+- **Human-in-the-loop** — Nothing executes without Local approval
 
-## Gold Tier behavior (from Gold orchestrator)
+---
 
-### Orchestrator core
+## Quick Start (One Command)
 
-- Watches `Needs_Action` and `Approved` using `watchdog`.
-- Debounces file creation events.
-- `trigger_claude()` runs a comprehensive prompt expecting `TASK_COMPLETE`.
-- `update_dashboard()` changes `AI_Employee_Vault/Dashboard.md`, refreshing an inbox summary and `last_updated`.
-- `expire_stale_approvals()`: moves old `/Pending_Approval` files to `/Rejected` after 48 hours.
+### Prerequisites
 
-### Task types handled by Claude prompt
+| Tool | Version | Install |
+|------|---------|---------|
+| Python | 3.13+ | [python.org](https://python.org) |
+| Node.js | v24+ LTS | [nodejs.org](https://nodejs.org) |
+| Obsidian | v1.10.6+ | [obsidian.md](https://obsidian.md) |
+| **AI Agent** (pick one) | | |
+| ↳ Claude Code | Latest | `npm i -g @anthropic/claude-code` |
+| ↳ Gemini CLI | Latest | `npm i -g @google/gemini-cli` |
+| ↳ Qwen Code | Latest | `npm i -g @qwen-code/qwen-code@latest` |
 
-- `email`
-- `briefing`
-- `linkedin_post`
-- `twitter_post`
-- `facebook_post`
-- `instagram_post`
-- `erpnext_audit`
-- generic type tasks
-
-### Approved action executor
-
-Supported action types:
-- `send_email` → runs `email-mcp` (via `node` command)
-- `post_linkedin` → runs `watchers/linkedin_poster.py`
-- `post_twitter` → runs `watchers/twitter_poster.py`
-- `post_facebook` → runs `watchers/meta_poster.py --platform facebook`
-- `post_instagram` → run `watchers/meta_poster.py --platform instagram`
-
-Behavior:
-- When an `Approved` file is created, it is executed, logged, and moved to `/Done`.
-- Supports Dry-Run mode via `DRY_RUN=true`.
-
-### Social posting subsystems
-
-- `linkedin_poster.py`: Playwright automation to login + post on LinkedIn. Supports cookies persistence.
-- `twitter_poster.py`: Playwright automation to login + post a tweet.
-- `meta_poster.py`: Posts to Facebook/Instagram via Playwright.
-
-### Inbox ingestion
-
-- `filesystem_watcher.py`: local `Inbox` folder watchers for dropped files.
-- `gmail_watcher.py`: Gmail API polling for important/unread emails, writes `EMAIL_*` tasks.
-- `linkedin_watcher.py`: watches LinkedIn interactions and queue.
-- `twitter_watcher.py`: polls/monitors for Twitter triggers.
-- `facebook_watcher.py`: polls Facebook interactions.
-- `erpnext_watcher.py`: polls ERPNext API for accounting/CRM updates.
-
-## Setup
-
-1. Install Python dependencies:
+### 1. Clone and configure
 
 ```bash
-cd "AI-Employee-Digital-FTE"
-python -m pip install -r requirements.txt
+git clone https://github.com/Sheikh-Muhammad-Mujtaba/AI-Employee-Digital-FTE.git
+cd AI-Employee-Digital-FTE
+cp .env.example .env
+# Edit .env — fill in your API keys, credentials, etc.
 ```
 
-2. Install browser tooling for Playwright:
+### 2. Install all dependencies
 
 ```bash
-python -m pip install playwright
+# Backend (FastAPI)
+cd backend
+pip install -r requirements.txt
+cd ..
+
+# Frontend (Next.js Dashboard)
+cd frontend
+npm install
+cd ..
+
+# WhatsApp Baileys
+cd whatsapp-baileys
+npm install
+cd ..
+
+# Email MCP
+cd email-mcp
+npm install
+cd ..
+
+# ERPNext MCP
+cd ERP_Next-MCP
+uv sync
+cd ..
+
+# Playwright browsers (for social media posting)
 python -m playwright install chromium
 ```
 
-3. Copy `.env.example` to `.env` and set keys:
-- `DRY_RUN=true|false`
-- `EMAIL_MCP_PATH` (path to `email-mcp/index.js`)
-- `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
-- `LINKEDIN_EMAIL`, `LINKEDIN_PASSWORD`, `LINKEDIN_HEADLESS` (true/false)
-- `MAX_EMAILS_PER_HOUR` (e.g., 10)
-- social API tokens as needed
-
-4. (Optional) Install copy of Claude CLI:
+### 3. Start everything
 
 ```bash
-npm install -g @anthropic/claude-code
+start.bat
 ```
 
-## Run commands
+This launches **9 services** in separate terminal windows:
 
-- Start orchestrator:
+| # | Service | Port | Description |
+|---|---------|------|-------------|
+| 1 | Dashboard API | `:8000` | FastAPI backend (auto-creates SQLite DB) |
+| 2 | Dashboard UI | `:3000` | Next.js frontend |
+| 3 | WhatsApp Baileys | `:3001` | WhatsApp watcher + HTTP API |
+| 4 | Orchestrator | — | Watches `Needs_Action/` and `Approved/` |
+| 5 | Gmail Watcher | — | Polls Gmail API every 2 min |
+| 6 | LinkedIn Watcher | — | Monitors LinkedIn queue |
+| 7 | Twitter Watcher | — | Monitors Twitter/X queue |
+| 8 | Facebook Watcher | — | Monitors Facebook + Instagram |
+| 9 | ERPNext Watcher | — | Polls ERPNext API every 15 min |
+
+### 4. First-time dashboard login
+
+1. Open **http://localhost:3000**
+2. Click **"First time? Create admin user"**
+3. Login: `admin` / `admin123`
+4. Navigate to **WhatsApp** tab → scan QR code to link your WhatsApp
+
+---
+
+## Repository Structure
+
+```
+AI-Employee-Digital-FTE/
+├── backend/                  # FastAPI dashboard API
+│   ├── main.py               # App entry point
+│   ├── config.py              # Environment config
+│   ├── database.py            # SQLAlchemy 2.0 + SQLite
+│   ├── models.py              # User model
+│   ├── auth.py                # JWT authentication
+│   ├── schemas.py             # Pydantic request/response models
+│   ├── vault_parser.py        # Markdown parser for vault files
+│   ├── requirements.txt
+│   └── routers/
+│       ├── auth_router.py     # Login + seed admin
+│       ├── vault_router.py    # Dashboard status endpoint
+│       ├── tasks_router.py    # Task approve/reject/list
+│       ├── projects_router.py # Business goals + plans
+│       └── whatsapp_router.py # Proxy to Baileys HTTP API
+├── frontend/                  # Next.js 15 dashboard UI
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx     # Root layout
+│   │   │   ├── page.tsx       # Root redirect
+│   │   │   ├── login/         # Login page
+│   │   │   ├── dashboard/     # Dashboard overview
+│   │   │   ├── tasks/         # Task review (approve/reject)
+│   │   │   ├── projects/      # Projects & plans
+│   │   │   └── whatsapp/      # WhatsApp status + send
+│   │   ├── components/
+│   │   │   └── Sidebar.tsx    # Navigation sidebar
+│   │   └── lib/
+│   │       └── api.ts         # Typed API client with JWT
+│   ├── package.json
+│   └── tsconfig.json
+├── whatsapp-baileys/          # WhatsApp watcher (Baileys v7)
+│   ├── index.js               # Main service
+│   ├── package.json
+│   └── auth_info/             # (auto-created) WhatsApp credentials
+├── AI_Employee_Vault/         # Obsidian vault (data layer)
+│   ├── Dashboard.md           # Real-time status summary
+│   ├── Business_Goals.md      # Q1 objectives & metrics
+│   ├── Company_Handbook.md    # AI rules of engagement
+│   ├── Inbox/                 # Raw input files drop here
+│   ├── Needs_Action/          # Triggers for Claude processing
+│   ├── Pending_Approval/      # Drafts awaiting human review
+│   ├── Approved/              # Human-approved → execute
+│   ├── Rejected/              # Denied or expired
+│   ├── Done/                  # Completed archive
+│   ├── Plans/                 # Multi-step project plans
+│   ├── Briefings/             # Weekly CEO reports
+│   ├── Social_Queue/          # Platform-specific post queues
+│   ├── Accounting/            # ERPNext snapshots
+│   ├── Audit_Reports/         # Weekly business audits
+│   └── Logs/                  # JSONL activity logs
+├── watchers/                  # Python automation scripts
+│   ├── orchestrator.py        # Core — watches folders, triggers Claude
+│   ├── base_watcher.py        # Abstract base class
+│   ├── filesystem_watcher.py  # Local file drop monitor
+│   ├── gmail_watcher.py       # Gmail API polling
+│   ├── linkedin_watcher.py    # LinkedIn queue monitor
+│   ├── linkedin_poster.py     # Playwright LinkedIn poster
+│   ├── twitter_watcher.py     # Twitter/X monitor
+│   ├── twitter_poster.py      # Playwright Twitter poster
+│   ├── facebook_watcher.py    # Facebook monitor
+│   ├── meta_poster.py         # Playwright FB/IG poster
+│   ├── erpnext_watcher.py     # ERPNext API polling
+│   ├── scheduler.py           # Cron-like daily/weekly triggers
+│   └── log_summary.py         # Log aggregation
+├── email-mcp/                 # Email MCP server (Node.js)
+├── ERP_Next-MCP/              # ERPNext MCP server (Python)
+├── .claude/skills/            # Agent skill templates
+├── .env.example               # Environment template
+├── mcp.json                   # Claude Code MCP config
+├── start.bat                  # ⚡ One-command startup
+├── ARCHITECTURE.md            # System architecture diagram
+└── README.md                  # This file
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              DASHBOARD (Next.js :3000 + FastAPI :8000)                  │
+│  Login → Overview → Tasks → Projects → WhatsApp                       │
+└───────────────────┬─────────────────────────────────────────────────────┘
+                    │ reads/writes
+                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    AI_Employee_Vault/ (Obsidian)                        │
+│  /Inbox → /Needs_Action → /Pending_Approval → /Approved → /Done       │
+└───────────┬─────────────────────────────┬───────────────────────────────┘
+            │ watchdog events              │ file moves
+            ▼                              ▼
+┌───────────────────────┐    ┌────────────────────────────────────────────┐
+│  WATCHERS (Python)    │    │  ORCHESTRATOR (orchestrator.py)            │
+│  Gmail, LinkedIn,     │    │  Watchdog on /Needs_Action → Claude Code  │
+│  Twitter, Facebook,   │    │  Watchdog on /Approved → Action Executors │
+│  ERPNext, Scheduler   │    └────────────────────────────────────────────┘
+└───────────────────────┘
+┌───────────────────────┐    ┌────────────────────────────────────────────┐
+│  WhatsApp Baileys     │    │  ACTION EXECUTORS                         │
+│  (:3001) — keyword    │    │  send_email → email-mcp                   │
+│  filtering, QR pair,  │    │  post_linkedin → linkedin_poster.py       │
+│  send/receive msgs    │    │  post_twitter → twitter_poster.py         │
+└───────────────────────┘    │  post_facebook/ig → meta_poster.py        │
+                             └────────────────────────────────────────────┘
+```
+
+---
+
+## Platinum Tier Deployment
+
+For production deployment with Cloud VM + Local sync:
 
 ```bash
-python watchers/orchestrator.py --vault ./AI_Employee_Vault --dry-run
+# 1. Setup Cloud VM (Oracle/AWS Free Tier)
+ssh ubuntu@your-cloud-vm
+./platinum/cloud_setup.sh
+
+# 2. Configure Local sync
+cd AI_Employee_Vault
+git remote add cloud ubuntu@your-cloud-vm:/opt/ai-employee/vault-sync
+bash ../platinum/local_sync.sh
+
+# 3. Test Platinum flow
+python ../platinum/test_platinum_tier.py
 ```
 
-- Start filesystem ingest:
+See [`platinum/README.md`](platinum/README.md) for full deployment guide.
 
-```bash
-python watchers/filesystem_watcher.py --vault ./AI_Employee_Vault
-```
+---
 
-- Start Gmail watch:
+## Environment Variables
 
-```bash
-python watchers/gmail_watcher.py --vault ./AI_Employee_Vault --interval 120
-```
+Copy `.env.example` to `.env` and configure:
 
-- Start social watchers: `linkedin`, `twitter`, `facebook` as needed.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DRY_RUN` | ✅ | `true` = log-only mode (default), `false` = live |
+| `AGENT` | ✅ | AI agent CLI: `claude`, `gemini`, or `qwen` (default: `claude`) |
+| `GMAIL_CLIENT_ID` | For Gmail | Google OAuth client ID |
+| `GMAIL_CLIENT_SECRET` | For Gmail | Google OAuth client secret |
+| `GMAIL_REFRESH_TOKEN` | For Gmail | Run `gmail_watcher.py --get-token` |
+| `LINKEDIN_EMAIL` | For LinkedIn | Playwright login email |
+| `LINKEDIN_PASSWORD` | For LinkedIn | Playwright login password |
+| `TWITTER_EMAIL` | For Twitter | X.com login email |
+| `TWITTER_PASSWORD` | For Twitter | X.com login password |
+| `FACEBOOK_EMAIL` | For Facebook | Meta login email |
+| `FACEBOOK_PASSWORD` | For Facebook | Meta login password |
+| `ERPNEXT_URL` | For ERPNext | ERPNext instance URL |
+| `DASHBOARD_SECRET_KEY` | Dashboard | JWT signing key (change in prod!) |
+| `DASHBOARD_FRONTEND_ORIGIN` | Dashboard | Default: `http://localhost:3000` |
+| `WA_KEYWORDS` | WhatsApp | Comma-separated trigger keywords |
+| `WA_HTTP_PORT` | WhatsApp | Baileys HTTP API port (default: 3001) |
 
-## Workflow example
+---
 
-1. Drop `invoice_urgent.pdf` in `AI_Employee_Vault/Inbox`.
-2. Filesystem watcher creates `Needs_Action/FILE_invoice_urgent_...md`.
-3. Orchestrator triggers Claude to create an action (e.g., `send_email` to `Pending_Approval`).
-4. Human moves generated approval file to `/Approved`.
-5. Orchestrator executes, sends email or posts social media.
-6. Orchestrator moves approved file to `/Done`, updates dashboard and logs.
+## Workflow Example
 
-## Logs
+1. An email arrives → **Gmail Watcher** creates `Needs_Action/EMAIL_abc123.md`
+2. **Orchestrator** detects the file → triggers **Claude Code** to process it
+3. Claude drafts a reply → writes to `Pending_Approval/REPLY_John.md`
+4. You open the **Dashboard** → go to **Tasks** → click **✓ Approve**
+5. File moves to `Approved/` → Orchestrator sends the email via `email-mcp`
+6. File archived to `Done/` → Dashboard updates
 
-- `AI_Employee_Vault/Logs/YYYY-MM-DD.jsonl` for actions and events.
-- `AI_Employee_Vault/Logs/.linkedin_cookies.json` for LinkedIn session persistence.
+Same flow for WhatsApp messages, social media posts, and ERPNext actions.
+
+---
+
+## MCP Servers
+
+Configured in `mcp.json` for Claude Code:
+
+| Server | Purpose | Transport |
+|--------|---------|-----------|
+| `email` | Send/draft Gmail | node stdio |
+| `erpnext` | ERPNext CRUD | python stdio |
+| `browser` | Ad-hoc web automation | npx stdio |
+| `windows-mcp` | Windows desktop UI automation | uvx stdio |
+
+Start Claude with: `claude --mcp-config mcp.json`
+
+---
 
 ## Troubleshooting
 
-- `Vault not found`: verify `--vault` path.
-- `claude` not found: ensure Claude CLI installed or use `--dry-run`.
-- `Gmail auth failed`: re-run `python watchers/gmail_watcher.py --get-token`.
-- `Playwright` auth flow fail: run `watchers/linkedin_poster.py --test-login`, update `.env`.
-- `page content extraction issue`: inspect Watcher console logs and `AI_Employee_Vault/Logs`
+| Issue | Fix |
+|-------|-----|
+| `Vault not found` | Verify `--vault` path or check `start.bat` paths |
+| `claude` not found | Install Claude CLI: `npm i -g @anthropic/claude-code` |
+| Gmail auth failed | Re-run `python watchers/gmail_watcher.py --get-token` |
+| Dashboard login fails | Hit `POST /api/auth/seed` first to create admin user |
+| WhatsApp QR expired | Restart the Baileys service — QR auto-regenerates |
+| Playwright auth fail | Run poster with `--test-login`, check `.env` creds |
+| `pydantic-core` build fail | You need `pydantic>=2.11.0` for Python 3.14 support |
+
+---
+
+## Security
+
+- **DRY_RUN=true** is the default — flip to `false` only when ready
+- **HITL** — Every external action goes through `/Pending_Approval/` first
+- **48h expiry** — Stale approvals auto-move to `/Rejected/`
+- **Credentials** — All secrets in `.env`, never in the vault. `.env` is gitignored
+- **Audit logs** — Every action logged to `Logs/YYYY-MM-DD.jsonl`
+
+---
 
 ## Notes
 
-- This Gold Tier README assumes full Silver feature parity plus social and ERP watchers in this repository.
-- Keep `Company_Handbook.md` up-to-date for AI rules of engagement.
-- Use `DRY_RUN` initially while validating workflow.
+- Keep `Company_Handbook.md` updated for AI behavioral rules
+- Dashboard reads directly from the Obsidian vault — changes are live
+- WhatsApp Baileys stores credentials in `whatsapp-baileys/auth_info/` (gitignored)
+- The Ralph Wiggum loop (`.claude/hooks/`) caps at 5 iterations per task
+
+---
+
+_Built for Hackathon 0 — Personal AI Employee · Gold Tier_

@@ -1,6 +1,6 @@
 # AI Employee Dashboard
 ---
-last_updated: 2026-03-15 16:06 UTC
+last_updated: 2026-03-18 22:37 UTC
 version: 0.3.0-gold
 tier: Gold
 status: active
@@ -42,32 +42,134 @@ status: active
 
 - **Pending items in /Inbox:** 0
 - **Items in /Needs_Action:** 0
-- **Items in /Pending_Approval:** 3
+- **Items in /Pending_Approval:** 11
 - **Active Plans:** 1
-- **Completed today:** 45
+- **Completed today:** 56
 
 
 ---
 
 ## Recent Activity
 
-| Time                    | Event                         | Details                                                                                  |
-|-------------------------|-------------------------------|------------------------------------------------------------------------------------------|
-| 2026-03-15 16:30 UTC    | Email archived                | Instagram login attempt (security@mail.instagram.com) — automated verification code, no action needed → /Done |
-| 2026-03-15 16:05 UTC    | LinkedIn posts drafted (3)    | "Intro to AI Employee", "Why Local-First", "Digital FTE Cost" → /Pending_Approval        |
-| 2026-03-15 16:05 UTC    | Email archived                | Instagram login attempt notification — automated, no action needed → /Done               |
-| 2026-03-15 09:20 UTC    | Twitter post reviewed         | Gold_Tier_Launch_001 (194 chars) — approved draft moved to /Pending_Approval             |
-| 2026-03-15 09:15 UTC    | Email triaged                 | Mujtaba "Quick checkup" — casual personal check-in, draft reply created → /Pending_Approval |
-| 2026-03-15 09:00 UTC    | Email triaged                 | Mujtaba "Work Assessment" — casual check-in, draft reply created → /Pending_Approval   |
-| 2026-03-15 08:40 UTC    | Twitter post queued           | Welcome_Tweet_001 reviewed (196 chars) — moved to /Pending_Approval                     |
-| 2026-03-15 08:40 UTC    | Email archived                | Instagram verification code (no-reply) — no action needed, archived to /Done            |
-| 2026-03-15 08:00 UTC    | Email triaged                 | Inbound lead from Liora (AI Automation) — draft reply created, pending approval          |
-| 2026-03-06 11:30 UTC    | Needs_Action cleared          | 2 emails processed — both archived to /Done                                              |
-| 2026-03-06 11:30 UTC    | Pending Approval created      | FLAG_Mujtaba_WhatsApp — 5th message, requesting WhatsApp contact, owner decision needed |
-| 2026-03-06 11:21 UTC    | Email sent                    | Reply to Mujtaba (Re: Necessary) sent successfully via orchestrator                     |
-| 2026-03-06 11:25 UTC    | Needs_Action triaged          | 4 processed emails archived to /Done; 1 new email escalated                              |
-| 2026-03-06 11:15 UTC    | Pending Approval created      | REPLY_Mujtaba_Followup — 4th message from Mujtaba, draft reply ready                   |
-| 2026-03-06 11:05 UTC    | Inbox triaged                 | 7 emails processed                                                                       |
+| Time | Event | Details |
+|------|-------|---------|
+| 2026-03-18 22:37 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:37 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:37 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:37 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:37 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:37 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:36 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, approved_by=human |
+| 2026-03-18 22:36 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:36 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 22:36 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+
+
+---
+action: send_whatsapp
+jid: 153944747675848@lid
+created: 2026-03-19T00:00:00Z
+---
+
+Hey! 👋 Absolutel... |
+| 2026-03-18 22:06 | Needs Action Detected | file=WHATSAPP_________________________2026-03-18T20-28-10-483Z.md |
+| 2026-03-18 22:05 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:05 | Twitter Failed | error=Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+
+
+---
+action: send_whatsapp
+jid: 153944747675848@lid
+created: 2026-03-19T00:00:00Z
+---
+
+Hey! 👋 Absolutel... |
+| 2026-03-18 22:06 | Needs Action Detected | file=WHATSAPP_________________________2026-03-18T20-28-10-483Z.md |
+| 2026-03-18 22:05 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:05 | Twitter Failed | error=Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:05 | Twitter Failed | error=Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:04 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, approved_by=human |
+| 2026-03-18 22:04 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, action=post_twitter, error=Twitter poster error: Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:04 | Twitter Failed | error=Twitter failed: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:04 | Twitter Failed | error=Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("[data-testid=\"tweetTextarea_0\"]").first to be visible
+ |
+| 2026-03-18 22:03 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, approved_by=human |
+
+
+---
+action: send_email
+to: sheikhhabibi154@gmail.com
+subject: Re: whats the update on project
+creat... |
+| 2026-03-18 21:43 | Needs Action Detected | file=EMAIL_19d02e091af1e5b0_20260318_213636.md |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+
+
+---
+action: send_email
+to: sheikhhabibi154@gmail.com
+subject: Re: whats the update on project
+creat... |
+| 2026-03-18 21:43 | Needs Action Detected | file=EMAIL_19d02e091af1e5b0_20260318_213636.md |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, approved_by=human |
+
+
+---
+action: send_email
+to: sheikhhabibi154@gmail.com
+subject: Re: whats the update on project
+creat... |
+| 2026-03-18 21:43 | Needs Action Detected | file=EMAIL_19d02e091af1e5b0_20260318_213636.md |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, approved_by=human |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, action=post_twitter, error=Twitter poster error: Twitter failed: Tweet too long: 330/280 |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Tweet too long: 330/280 |
+
+
+---
+action: send_email
+to: sheikhhabibi154@gmail.com
+subject: Re: whats the update on project
+creat... |
+| 2026-03-18 21:43 | Needs Action Detected | file=EMAIL_19d02e091af1e5b0_20260318_213636.md |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, action=post_twitter, error=Twitter poster error: Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Twitter Failed | error=Not logged in. Run: python twitter_poster.py --setup |
+| 2026-03-18 21:43 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_ready_094155.md, approved_by=human |
+| 2026-03-18 21:43 | Action Failed | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, action=post_twitter, error=Twitter poster error: Twitter failed: Tweet too long: 330/280 |
+| 2026-03-18 21:43 | Twitter Failed | error=Twitter failed: Tweet too long: 330/280 |
+| 2026-03-18 21:43 | Twitter Failed | error=Tweet too long: 330/280 |
+| 2026-03-18 21:43 | Action Approved | file=TWITTER_Gold_Tier_Launch_001_20260315_090734.md, approved_by=human |
+
 
 ---
 
