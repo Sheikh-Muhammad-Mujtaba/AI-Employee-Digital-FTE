@@ -75,7 +75,7 @@ class TaskFile(BaseModel):
 
 
 class TaskActionRequest(BaseModel):
-    action: str = Field(..., pattern="^(approve|reject|revise|ignore|edit|force_approve|draft)$")
+    action: str = Field(..., pattern="^(approve|reject|revise|ignore|edit|force_approve|draft|process)$")
     feedback: Optional[str] = None
     source_folder: str = "Pending_Approval"
     content: Optional[str] = None

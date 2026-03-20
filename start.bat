@@ -15,6 +15,12 @@ echo  ================================================================
 echo.
 echo  Vault:     %VAULT%
 echo  Agent:     %AGENT% (set AGENT in .env to switch: claude / gemini / qwen)
+echo  YOLO Mode: ENABLED (all actions auto-approved, no permission prompts)
+echo  Skills:    Email, ERPNext, Browser, Windows (requires mcp.json)
+echo.
+echo  Setup required:
+echo    1. Copy example.mcp.json to mcp.json
+echo    2. Update .env with API credentials (GMAIL_*, ERPNEXT_*, etc.)
 echo.
 
 :: ── Dashboard Backend (FastAPI on port 8000) ─────────────────────────────────

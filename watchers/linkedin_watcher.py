@@ -62,6 +62,13 @@ MAX_POSTS_PER_DAY     = int(os.getenv("MAX_POSTS_PER_DAY", "3"))
 # - topic: Three things I learned about AI automation this week...
 # - tone: thought-leadership
 # - status: pending
+#
+# STATUS VALUES:
+# - pending   → Waiting for scheduled time
+# - triggered → Action file created in Needs_Action (AI is drafting)
+# - approved  → Post approved and ready to publish
+# - published → Live on LinkedIn
+# - skipped   → Manually cancelled
 
 
 QUEUE_FILE_NAME = "LinkedIn_Queue.md"

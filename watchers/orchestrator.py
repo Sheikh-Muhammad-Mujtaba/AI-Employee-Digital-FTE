@@ -47,25 +47,41 @@ MAX_EMAILS_PER_HOUR  = int(os.getenv("MAX_EMAILS_PER_HOUR", "10"))
 
 AGENT = os.getenv("AGENT", "claude").lower().strip()
 
-# Agent CLI configs: { name: { cmd: [...], prompt_flag: str, extra_flags: [...] } }
+# Agent CLI configs: 
+# - "cmd": base command to invoke agent
+# - "prompt_flag": flag to pass prompt content (--print, -p, --prompt)
+# - "extra_flags": YOLO mode flags to auto-approve all actions without permission
+# - "mcp_flag": flag to load MCP servers for skills (email, erpnext, browser, etc.)
+#
+# YOLO MODE: All agents run with flags to auto-accept actions (skip permission prompts)
+# ✓ claude: uses --dangerously-skip-permissions + --permission-mode bypassPermissions
+# ✓ qwen:   uses --approval-mode=yolo (combined flag, not separate --yolo)
+# ✓ gemini: uses --approval-mode=yolo (combined flag, not separate --yolo)
+#
+# SKILLS: Loaded via mcp.json if it exists (copy from example.mcp.json)
+# ✓ email: Gmail integration (send/draft emails)
+# ✓ erpnext: ERPNext API for accounting/business data
+# ✓ browser: Web automation (forms, scraping, RPA)
+# ✓ windows: Desktop UI automation (click, type, screenshot, shell)
+
 AGENT_CONFIGS: dict[str, dict] = {
     "claude": {
         "cmd": ["claude"],
         "prompt_flag": "--print",
-        "extra_flags": ["--dangerously-skip-permissions"],
+        "extra_flags": ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"],
         "mcp_flag": "--mcp-config",
     },
     "gemini": {
         "cmd": ["gemini"],
         "prompt_flag": "-p",
-        "extra_flags": [],
+        "extra_flags": ["--approval-mode=yolo"],
         "mcp_flag": None,  # gemini reads from ~/.gemini/settings.json
     },
     "qwen": {
         "cmd": ["qwen"],
         "prompt_flag": "--prompt",
-        "extra_flags": [],
-        "mcp_flag": "--mcp-config",
+        "extra_flags": ["--approval-mode=yolo"],
+        "mcp_flag": None,  # qwen uses 'qwen mcp' command, not a flag
     },
 }
 
@@ -120,6 +136,18 @@ def parse_frontmatter(text: str) -> dict:
             key, _, val = line.partition(":")
             fields[key.strip()] = val.strip()
     return fields
+
+
+def extract_body_content(text: str) -> str:
+    """Return text after frontmatter, or full text if no frontmatter."""
+    if not text:
+        return ""
+    trimmed = text.strip()
+    if trimmed.startswith("---"):
+        m = re.match(r"^---\s*\n.*?\n---\s*\n?(.*)$", trimmed, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+    return trimmed
 
 
 # ── Dashboard updater ─────────────────────────────────────────────────────────
@@ -232,125 +260,215 @@ def log_event(vault: Path, action_type: str, **kwargs):
 
 # ── Agent trigger (multi-agent: claude / gemini / qwen) ──────────────────────
 
-SILVER_PROMPT_TEMPLATE = """You are the AI Employee (Silver Tier). You work autonomously to process tasks.
+SILVER_PROMPT_TEMPLATE = r"""You are the AI Employee. You process tasks in TWO stages.
 
-Your vault is at: {vault}
-Task file to process: {action_file}
+**Vault Location:** .\\AI_Employee_Vault\\
 
-## Your job
+**CURRENT STAGE:** Check which folder the file is in:
+- **Needs_Action\\** = STAGE 1 (DRAFTING) - Create a draft ONLY
+- **Pending_Approval\\** = STAGE 2 (EXECUTION) - Execute the action
 
-1. Read the task file at {action_file} to understand what is needed.
-2. Read {vault}/Company_Handbook.md for rules of engagement.
-3. Act based on the task type:
+─────────────────────────────────────────────────────────────────
 
-### If type == "email":
-   - If the sender asks for a quotation, invoice, or financial document, you MUST first use your ERPNext tools to search for or generate the requested document BEFORE drafting your reply. Include the relevant details in your drafted reply.
-   - Draft a professional reply to the email.
-   - Create a file in {vault}/Pending_Approval/ named REPLY_<timestamp>.md with this exact format:
-     ```
-     ---
-     action: send_email
-     to: <sender's email address>
-     subject: Re: <original subject>
-     created: <current UTC datetime in ISO format>
-     ---
+## STAGE 1: DRAFTING (File in Needs_Action/)
 
-     <your drafted email reply body here>
+**YOUR TASK:** Read the input file and CREATE A DRAFT reply/post.
 
-     ---
-     ```
-   - Move the original task file from {action_file} to {vault}/Done/
+**IMPORTANT:** 
+- DO NOT send emails
+- DO NOT post to social media  
+- DO NOT send WhatsApp messages
+- ONLY create a draft file in Pending_Approval/
 
-### If type == "briefing":
-   - Generate the briefing content.
-   - Write it to {vault}/Briefings/ with filename BRIEFING_<date>.md
-   - Move the original task file to {vault}/Done/
+**After creating the draft:**
+1. Save draft to: .\Pending_Approval\\
+2. Move original file to: .\Done\\
+3. Output: <promise>TASK_COMPLETE</promise>
 
-### If type == "whatsapp":
-   - If the sender asks for a quotation, invoice, or financial document, you MUST first use your ERPNext tools to search for or generate the requested document BEFORE drafting your reply. Include the relevant details in your drafted reply.
-   - Draft a helpful and extremely concise reply to the WhatsApp message.
-   - If there is a `## User Feedback` section present at the bottom of the file, strongly follow those instructions to revise your previous draft.
-   - Create a file in {vault}/Pending_Approval/ named REPLY_WA_<timestamp>.md with this exact format:
-     ```
-     ---
-     action: send_whatsapp
-     jid: <sender's jid from the task file>
-     created: <current UTC datetime in ISO format>
-     ---
+─────────────────────────────────────────────────────────────────
 
-     <your drafted whatsapp reply here>
-     ---
-     ```
-   - Move the original task file from {action_file} to {vault}/Done/
+## STAGE 2: EXECUTION (File in Pending_Approval/)
 
-### If type == "linkedin_post":
-   - Use the /post-linkedin skill to draft the post.
-   - Create a file in {vault}/Pending_Approval/ with action: post_linkedin in frontmatter.
-   - Move the original task file to {vault}/Done/
+**YOUR TASK:** Read the draft and EXECUTE the action.
 
-### If type == "twitter_post":
-   - Use the /post-twitter skill to draft the tweet (max 280 chars).
-   - Create a file in {vault}/Pending_Approval/ with action: post_twitter in frontmatter.
-   - Move the original task file to {vault}/Done/
+**Actions to execute:**
+- If action: send_email → Send the email
+- If action: send_whatsapp → Send the WhatsApp message
+- If action: post_linkedin → Post to LinkedIn
+- If action: post_twitter → Post to Twitter
+- If action: post_facebook → Post to Facebook
+- If action: post_instagram → Post to Instagram
 
-### If type == "facebook_post":
-   - Use the /post-facebook skill to draft the post.
-   - Create a file in {vault}/Pending_Approval/ with action: post_facebook in frontmatter.
-   - Move the original task file to {vault}/Done/
+**After executing:**
+1. Perform the action (send/post)
+2. Move file to: .\AI_Employee_Vault\\Done\\
+3. Output: <promise>TASK_COMPLETE</promise>
 
-### If type == "instagram_post":
-   - Use the /post-instagram skill to draft the post.
-   - Include image_url in the frontmatter of the Pending_Approval file.
-   - Create a file in {vault}/Pending_Approval/ with action: post_instagram in frontmatter.
-   - Move the original task file to {vault}/Done/
+─────────────────────────────────────────────────────────────────
 
-### If type == "erpnext_audit":
-   - Use the /accounting-audit skill to pull data and write a snapshot.
-   - Move the original task file to {vault}/Done/
+## Task Type Instructions
 
-### If type == "generate_plan":
-   - Read the user's prompt in the task file to understand what plan needs to be created.
-   - Draft a comprehensive plan with a Title, Description, Steps, and Due Date if applicable.
-   - Create a file in {vault}/Pending_Approval/ named PLAN_DRAFT_<timestamp>.md with this exact format:
-     ```
-     ---
-     action: save_plan
-     title: <Drafted Title>
-     created: <current UTC datetime>
-     due_date: <Drafted Due Date or TBD>
-     status: draft
-     ---
+### EMAIL (type: email)
 
-     <your drafted plan body containing Description and Steps>
-     ```
-   - Move the original task file from {action_file} to {vault}/Done/
+**STAGE 1 (Drafting):**
+- Read the email from sender
+- Draft a professional reply
+- Extract sender email from the "from" field in frontmatter
+- Use current timestamp in ISO format (e.g., 2026-03-20T17:48:15Z)
+- Create file: .\Pending_Approval\\REPLY_{{sender_name}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: send_email
+to: sender@email.com
+subject: Re: Original Subject
+created: 2026-03-19T19:00:00Z
+---
 
-### If type == "accounting_request":
-   - Read the user's prompt in the task file to understand the accounting task (e.g. review invoices, create invoice).
-   - Use your ERPNext skills/tools to perform the requested actions.
-   - Draft a summary of your actions and findings.
-   - Create a file in {vault}/Pending_Approval/ named ACCOUNTING_REPORT_<timestamp>.md with this exact format:
-     ```
-     ---
-     action: save_accounting_report
-     title: Accounting Task Report
-     created: <current UTC datetime>
-     ---
+Dear Sender,
 
-     <your drafted summary body>
-     ```
-   - Move the original task file from {action_file} to {vault}/Done/
+[Your drafted reply here]
 
-### For any other task:
-   - Handle it appropriately and move the file to {vault}/Done/
+Best regards,
+AI Employee
+```
 
-## Rules
-- NEVER send emails or post to LinkedIn directly — always write to /Pending_Approval/ first.
-- Always move the processed action file to /Done/ when complete.
-- Update {vault}/Dashboard.md last_updated field when done.
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use email MCP to SEND the email
+- Move file to Done/
 
-Output <promise>TASK_COMPLETE</promise> when finished.
+### WHATSAPP (type: whatsapp)
+
+**STAGE 1 (Drafting):**
+- Read the WhatsApp message
+- Draft a concise and context-aware reply
+- Extract sender name from the "from" field in frontmatter
+- Extract JID from the "jid" field in frontmatter (e.g., 923xxxx@g.us or 923xxxx@s.whatsapp.net)
+- Use current timestamp in ISO format (e.g., 2026-03-20T17:48:15Z)
+- Create file: .\Pending_Approval\\REPLY_WA_{{sender_name}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: send_whatsapp
+jid: 1234567890@s.whatsapp.net
+created: 2026-03-19T19:00:00Z
+---
+
+[Your drafted WhatsApp reply]
+```
+
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use WhatsApp Baileys API to SEND the message
+- Move file to Done/
+
+### LINKEDIN POST (type: linkedin_post)
+
+**STAGE 1 (Drafting):**
+- Read the topic from the file
+- Draft a professional LinkedIn post
+- Create file: .\Pending_Approval\\LINKEDIN_{{title}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: post_linkedin
+created: 2026-03-19T19:00:00Z
+---
+
+[Your drafted LinkedIn post with hashtags]
+```
+
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use LinkedIn poster to PUBLISH the post
+- Move file to Done/
+
+### TWITTER POST (type: twitter_post)
+
+**STAGE 1 (Drafting):**
+- Read the topic from the file
+- Draft a tweet (MAX 200 characters Importand else the post will fail)
+- Include character count at end
+- Create file: .\Pending_Approval\\TWITTER_{{title}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: post_twitter
+created: 2026-03-19T19:00:00Z
+---
+
+[Your drafted tweet - max 200 chars (Strict)]
+
+Characters: 185
+```
+
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use Twitter poster to PUBLISH the tweet
+- Move file to Done/
+
+### FACEBOOK POST (type: facebook_post)
+
+**STAGE 1 (Drafting):**
+- Read the topic from the file
+- Draft a Facebook post
+- Create file: .\Pending_Approval\\FACEBOOK_{{title}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: post_facebook
+created: 2026-03-19T19:00:00Z
+---
+
+[Your drafted Facebook post with hashtags]
+```
+
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use Facebook poster to PUBLISH the post
+- Move file to Done/
+
+### INSTAGRAM POST (type: instagram_post)
+
+**STAGE 1 (Drafting):**
+- Read the topic from the file
+- Draft an Instagram caption
+- Include image_url in frontmatter
+- Create file: .\AI_Employee_Vault\\Pending_Approval\\INSTAGRAM_{{title}}_{{timestamp}}.md
+- Format:
+```markdown
+---
+action: post_instagram
+image_url: https://example.com/image.png
+created: 2026-03-19T19:00:00Z
+---
+
+[Your drafted Instagram caption with hashtags]
+```
+
+**STAGE 2 (Execution):**
+- Read the draft from Pending_Approval/
+- Use Instagram poster to PUBLISH the post
+- Move file to Done/
+
+─────────────────────────────────────────────────────────────────
+
+**REMEMBER:**
+- Check folder to determine stage
+- Stage 1 (Needs_Action/) = CREATE DRAFT ONLY
+- Stage 2 (Pending_Approval/) = EXECUTE ACTION
+- Always output <promise>TASK_COMPLETE</promise> when done
 """
+
+def _action_requires_approval(action_file: Path, output_lower: str) -> bool:
+    name = action_file.name.upper()
+    if any(name.startswith(prefix) for prefix in ["EMAIL_", "WHATSAPP_", "LINKEDIN_", "TWITTER_", "FACEBOOK_", "INSTAGRAM_"]):
+        return True
+    if any(token in output_lower for token in ["action: send_email", "action: send_whatsapp", "action: post_linkedin", "action: post_twitter", "action: post_facebook", "action: post_instagram"]):
+        return True
+    return False
+
 
 def trigger_agent(vault: Path, action_file: Path):
     """Trigger the selected AI agent (AGENT env var) to process a task file.
@@ -381,6 +499,9 @@ def trigger_agent(vault: Path, action_file: Path):
     mcp_json = Path(__file__).parent.parent / "mcp.json"
     if config["mcp_flag"] and mcp_json.exists():
         cmd.extend([config["mcp_flag"], str(mcp_json)])
+        logger.debug(f"MCP config loaded: {mcp_json}")
+    elif config["mcp_flag"] and not mcp_json.exists():
+        logger.warning(f"MCP config not found at {mcp_json}. Skills may be unavailable.")
 
     # Write prompt to a temporary file to avoid Windows CMD length limits (8192 chars)
     prompt_file = vault / f".temp_prompt_{action_file.name}.txt"
@@ -390,7 +511,13 @@ def trigger_agent(vault: Path, action_file: Path):
     # Add prompt
     cmd.extend([config["prompt_flag"], short_prompt])
 
-    logger.info(f"Triggering {AGENT.upper()} for: {action_file.name}")
+    pending_before = set()
+    pending_approval_dir = vault / "Pending_Approval"
+    if pending_approval_dir.exists():
+        pending_before = {f.name for f in pending_approval_dir.iterdir() if f.is_file()}
+
+    logger.info(f"Triggering {AGENT.upper()} for: {action_file.name} [YOLO mode enabled]")
+    logger.debug(f"Command: {' '.join(cmd)}")
     try:
         try:
             result = subprocess.run(
@@ -407,29 +534,43 @@ def trigger_agent(vault: Path, action_file: Path):
             if prompt_file.exists():
                 prompt_file.unlink()
 
-        if result.returncode == 0:
-            logger.info(f"{AGENT.upper()} completed: {action_file.name}")
-            # Log a snippet of the agent's thought process/output
-            snippet = result.stdout[:500].strip() + ("..." if len(result.stdout) > 500 else "")
-            log_event(vault, "agent_processed", agent=AGENT, file=action_file.name, output_snippet=snippet)
-
-            # QWEN robustness: sometimes it skips the tag but outputs the files.
-            # We check if the files were created in /Pending_Approval or /Done
-            # But safer to just look for common completion strings.
-            output_lower = result.stdout.lower()
-            if "task_complete" not in output_lower and "done" not in output_lower:
-                logger.warning(f"{AGENT.upper()} finished but completion marker not found in output for: {action_file.name}")
-            
-            # Safety fallback: if the agent didn't move the file (common fail), 
-            # we move it to Done if we see evidence of work.
-            if action_file.exists() and ("pending_approval" in output_lower or "done" in output_lower):
-                logger.info(f"Safety move for {action_file.name} to /Done")
-                done_dir = vault / "Done"
-                done_dir.mkdir(exist_ok=True)
-                action_file.rename(done_dir / action_file.name)
-
-        else:
+        if result.returncode != 0:
             logger.error(f"{AGENT.upper()} error (code {result.returncode}): {result.stderr[:300]}")
+            log_event(vault, "agent_failed", agent=AGENT, file=action_file.name, error=result.stderr[:300])
+            return
+
+        logger.info(f"{AGENT.upper()} completed: {action_file.name}")
+        snippet = result.stdout[:500].strip() + ("..." if len(result.stdout) > 500 else "")
+        log_event(vault, "agent_processed", agent=AGENT, file=action_file.name, output_snippet=snippet)
+
+        pending_after = {f.name for f in pending_approval_dir.iterdir() if f.is_file()} if pending_approval_dir.exists() else set()
+        new_drafts = list(pending_after - pending_before)
+
+        output_lower = result.stdout.lower()
+        requires_approval = _action_requires_approval(action_file, output_lower)
+
+        if requires_approval and not new_drafts:
+            logger.warning(f"⚠️ {AGENT.upper()} processed {action_file.name} but no new /Pending_Approval draft was detected")
+            logger.warning("Action requires approval but agent output did not create a draft; moving file to Needs_Action_Failed for manual review.")
+
+            failed_dir = vault / "Needs_Action_Failed"
+            failed_dir.mkdir(exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fail_dest = failed_dir / f"{action_file.stem}_failed_{ts}{action_file.suffix}"
+            action_file.rename(fail_dest)
+            logger.error(f"❌ Moved {action_file.name} to /Needs_Action_Failed/ (as {fail_dest.name})")
+            log_event(vault, "task_failed_no_draft", file=action_file.name, action_file=fail_dest.name)
+            return
+
+        if action_file.exists():
+            done_dir = vault / "Done"
+            done_dir.mkdir(exist_ok=True)
+            ts = datetime.now().strftime("%H%M%S")
+            dest = done_dir / f"{action_file.stem}_{ts}{action_file.suffix}"
+            action_file.rename(dest)
+            logger.info(f"✅ Moved {action_file.name} to /Done/ (as {dest.name})")
+            log_event(vault, "task_completed", file=action_file.name, drafts_created=len(new_drafts), requires_approval=requires_approval)
+
     except FileNotFoundError:
         install_hints = {
             "claude": "npm install -g @anthropic/claude-code",
@@ -440,6 +581,7 @@ def trigger_agent(vault: Path, action_file: Path):
         logger.error(f"'{AGENT}' CLI not found. Install with: {hint}")
     except subprocess.TimeoutExpired:
         logger.error(f"{AGENT.upper()} timed out (10 min) for: {action_file.name}")
+        log_event(vault, "agent_timeout", agent=AGENT, file=action_file.name)
 
 
 # ── Approved action executor ──────────────────────────────────────────────────
@@ -463,7 +605,7 @@ class ApprovedActionExecutor:
         self._emails_this_hour: list[datetime] = []
 
     def _check_email_rate_limit(self) -> bool:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=1)
         self._emails_this_hour = [t for t in self._emails_this_hour if t > cutoff]
         if len(self._emails_this_hour) >= MAX_EMAILS_PER_HOUR:
@@ -488,7 +630,9 @@ class ApprovedActionExecutor:
                 "save_accounting_report": "save_accounting_report",
                 "whatsapp": "send_whatsapp",
                 "email": "send_email",
-                "erpnext_audit": "acknowledge_only"
+                "erpnext_audit": "acknowledge_only",
+                "accounting_audit": "run_accounting_audit",
+                "run_accounting_audit": "run_accounting_audit"
             }
             action_type = type_map.get(action_type, action_type)
 
@@ -528,6 +672,8 @@ class ApprovedActionExecutor:
                 logger.info(f"Accounting report saved to /Accounting: {approved_file.name}")
                 update_dashboard(self.vault)
                 return
+            elif action_type == "run_accounting_audit":
+                self._execute_run_accounting_audit(approved_file, fields, text)
             else:
                 logger.info(f"Action type '{action_type}' acknowledged — no automated execution defined.")
                 log_event(self.vault, "action_acknowledged", file=approved_file.name, action=action_type)
@@ -567,19 +713,18 @@ class ApprovedActionExecutor:
             if m:
                 subject = m.group(1).strip()
 
-        # Extract body after **Body:** marker, or between --- delimiters
-        body = ""
-        body_match = re.search(r"\*\*Body:\*\*\s*\n\n(.+?)(?:\n\n---|$)", text, re.DOTALL)
-        if body_match:
-            body = body_match.group(1).strip()
-        else:
-            body_match = re.search(r"---\n\n(.+?)\n\n---", text, re.DOTALL)
-            body = body_match.group(1).strip() if body_match else ""
+        # Extract body using unified helper (strips frontmatter)
+        body = extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would send email to: {to} | Subject: {subject}")
             log_event(self.vault, "email_sent_dry_run", to=to, subject=subject)
             return
+
+        if not to or not subject:
+            logger.error(f"Email draft is missing required fields: to='{to}' subject='{subject}' in {approved_file.name}")
+            log_event(self.vault, "email_failed_missing_fields", file=approved_file.name, to=to, subject=subject)
+            raise ValueError("Email missing required fields: to and subject")
 
         if not EMAIL_MCP_PATH:
             logger.warning("EMAIL_MCP_PATH not set. Cannot send email. Set it in .env")
@@ -596,7 +741,7 @@ class ApprovedActionExecutor:
             )
             if result.returncode == 0:
                 logger.info(f"Email sent to: {to} | Subject: {subject}")
-                self._emails_this_hour.append(datetime.utcnow())
+                self._emails_this_hour.append(datetime.now(timezone.utc))
                 log_event(
                     self.vault, "email_sent",
                     to=to, subject=subject, approved_by="human",
@@ -610,9 +755,20 @@ class ApprovedActionExecutor:
             logger.error("Email MCP timed out.")
             raise RuntimeError("Email timeout")
 
+    def _is_whatsapp_connected(self) -> bool:
+        import requests
+        try:
+            resp = requests.get("http://localhost:3001/status", timeout=5)
+            if resp.ok:
+                data = resp.json()
+                return data.get("status") == "connected"
+        except Exception as e:
+            logger.warning(f"Failed to get WhatsApp status: {e}")
+        return False
+
     def _execute_send_whatsapp(self, approved_file: Path, fields: dict, text: str):
         import requests
-        
+
         jid = fields.get("jid", "")
         # Extract body after ---
         body_match = re.search(r"---\n\n(.+?)(?:\n\n---|$)", text, re.DOTALL)
@@ -622,14 +778,19 @@ class ApprovedActionExecutor:
             logger.error(f"WhatsApp missing jid or body in {approved_file.name}")
             raise ValueError("WhatsApp missing jid or body")
 
+        if not self._is_whatsapp_connected():
+            logger.warning("WhatsApp connector is not connected (status != connected)")
+            log_event(self.vault, "whatsapp_not_connected", file=approved_file.name, jid=jid)
+            raise RuntimeError("WhatsApp not connected")
+
         if DRY_RUN:
-            logger.info(f"[DRY RUN] Would send WA to {jid}:\n{body[:100]}")
+            logger.info(f"[DRY RUN] Would send WA to {{jid}}:\n{body[:100]}")
             log_event(self.vault, "whatsapp_sent_dry_run", jid=jid, text=body[:100])
             return
 
         try:
             # Baileys default port is 3001
-            resp = requests.post("http://localhost:3001/send", json={"jid": jid, "text": body}, timeout=10)
+            resp = requests.post("http://localhost:3001/send", json={"jid": jid, "text": body}, timeout=30)
             if resp.status_code == 200:
                 logger.info(f"WhatsApp sent to {jid}")
                 log_event(self.vault, "whatsapp_sent", jid=jid, approved_by="human", result="success")
@@ -637,15 +798,25 @@ class ApprovedActionExecutor:
                 logger.error(f"WhatsApp sending failed: {resp.text}")
                 log_event(self.vault, "whatsapp_failed", jid=jid, error=resp.text)
                 raise RuntimeError(f"WhatsApp failed: {resp.text}")
+        except requests.exceptions.ConnectTimeout as e:
+            logger.error(f"WhatsApp connection timeout: {e}")
+            log_event(self.vault, "whatsapp_connection_timeout", jid=jid, error=str(e))
+            raise RuntimeError("WhatsApp connection timeout")
+        except requests.exceptions.ReadTimeout as e:
+            logger.error(f"WhatsApp read timeout: {e}")
+            log_event(self.vault, "whatsapp_read_timeout", jid=jid, error=str(e))
+            raise RuntimeError("WhatsApp read timeout")
+        except Exception as e:
+            logger.error(f"WhatsApp failed with exception: {e}")
+            log_event(self.vault, "whatsapp_failed", jid=jid, error=str(e))
+            raise
         except Exception as e:
             logger.error(f"WhatsApp Baileys connection error: {e}")
             log_event(self.vault, "whatsapp_failed", jid=jid, error=str(e))
             raise RuntimeError(f"WhatsApp connection error: {e}")
 
     def _execute_post_linkedin(self, approved_file: Path, fields: dict, text: str):
-        # Extract post content between the --- delimiters
-        body_match = re.search(r"---\n\n(.+?)\n\n---", text, re.DOTALL)
-        post_content = body_match.group(1).strip() if body_match else ""
+        post_content = extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to LinkedIn:\n{post_content[:200]}...")
@@ -690,8 +861,7 @@ class ApprovedActionExecutor:
 
 
     def _execute_post_twitter(self, approved_file: Path, fields: dict, text: str):
-        parts = text.split("---")
-        post_content = parts[3].strip() if len(parts) > 3 else ""
+        post_content = extract_body_content(text)
 
         if not post_content:
             logger.error("Twitter: post content is empty — check the approval file format.")
@@ -736,8 +906,7 @@ class ApprovedActionExecutor:
             raise RuntimeError(f"Twitter poster error: {e}")
 
     def _execute_post_facebook(self, approved_file: Path, fields: dict, text: str):
-        parts = text.split("---")
-        post_content = parts[3].strip() if len(parts) > 3 else ""
+        post_content = extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to Facebook:\n{post_content[:200]}")
@@ -774,8 +943,7 @@ class ApprovedActionExecutor:
             raise RuntimeError(f"Facebook poster error: {e}")
 
     def _execute_post_instagram(self, approved_file: Path, fields: dict, text: str):
-        parts = text.split("---")
-        post_content = parts[3].strip() if len(parts) > 3 else ""
+        post_content = extract_body_content(text)
         image_url = fields.get("image_url", "")
 
         if DRY_RUN:
@@ -816,6 +984,77 @@ class ApprovedActionExecutor:
             logger.error(f"Instagram poster error: {e}")
             log_event(self.vault, "instagram_failed", error=str(e))
             raise RuntimeError(f"Instagram poster error: {e}")
+
+    def _execute_run_accounting_audit(self, approved_file: Path, fields: dict, text: str):
+        """Execute accounting audit using ERPNext MCP server."""
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would run accounting audit for: {approved_file.name}")
+            log_event(self.vault, "accounting_audit_dry_run", file=approved_file.name)
+            return
+
+        # Check if ERPNext MCP is available
+        erpnext_mcp_path = os.getenv("ERPNEXT_MCP_PATH", "")
+        if not erpnext_mcp_path:
+            logger.warning("ERPNEXT_MCP_PATH not set. Cannot run accounting audit. Set it in .env")
+            log_event(self.vault, "accounting_audit_skipped", reason="ERPNEXT_MCP_PATH_not_set", file=approved_file.name)
+            return
+
+        # Extract audit parameters from frontmatter or body
+        audit_type = fields.get("audit_type", "general")
+        period = fields.get("period", "current_month")
+        company = fields.get("company", "default")
+
+        # Prepare audit request
+        audit_request = {
+            "action": "run_audit",
+            "audit_type": audit_type,
+            "period": period,
+            "company": company,
+            "source_file": str(approved_file.name)
+        }
+
+        try:
+            # Call ERPNext MCP server
+            result = subprocess.run(
+                ["python", "-m", "ERP_Next-MCP.src.server"],
+                input=json.dumps(audit_request),
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minutes for audit
+                encoding="utf-8",
+                cwd=Path(erpnext_mcp_path).parent if erpnext_mcp_path else None
+            )
+
+            if result.returncode == 0:
+                try:
+                    audit_result = json.loads(result.stdout.strip())
+                    logger.info(f"Accounting audit completed: {audit_result.get('summary', 'Success')}")
+                    log_event(self.vault, "accounting_audit_complete",
+                             file=approved_file.name,
+                             audit_type=audit_type,
+                             period=period,
+                             result="success")
+                except json.JSONDecodeError:
+                    logger.info("Accounting audit completed (no detailed results)")
+                    log_event(self.vault, "accounting_audit_complete",
+                             file=approved_file.name,
+                             audit_type=audit_type,
+                             result="success")
+            else:
+                logger.error(f"Accounting audit failed: {result.stderr[:1000]}")
+                log_event(self.vault, "accounting_audit_failed",
+                         file=approved_file.name,
+                         error=result.stderr[:1000])
+                raise RuntimeError(f"Accounting audit failed: {result.stderr[:500]}")
+
+        except subprocess.TimeoutExpired:
+            logger.error("Accounting audit timed out (5 minutes)")
+            log_event(self.vault, "accounting_audit_timeout", file=approved_file.name)
+            raise RuntimeError("Accounting audit timeout")
+        except Exception as e:
+            logger.error(f"Accounting audit error: {e}")
+            log_event(self.vault, "accounting_audit_error", file=approved_file.name, error=str(e))
+            raise RuntimeError(f"Accounting audit error: {e}")
 
 
 # ── Approval expiry handler ───────────────────────────────────────────────────
@@ -931,8 +1170,23 @@ def main():
     for folder in ["Needs_Action", "Approved", "Pending_Approval", "Rejected", "Done", "Plans", "Logs"]:
         (vault / folder).mkdir(exist_ok=True)
 
+    # Check MCP config availability
+    mcp_json = Path(__file__).parent.parent / "mcp.json"
+    mcp_example = Path(__file__).parent.parent / "example.mcp.json"
+    if not mcp_json.exists() and mcp_example.exists():
+        logger.warning(f"⚠️  MCP config not found: {mcp_json}")
+        logger.warning(f"   To enable skills for email, social posts, and accounting:")
+        logger.warning(f"   1. Copy: cp {mcp_example} {mcp_json}")
+        logger.warning(f"   2. Update environment variables in .env (GMAIL_CLIENT_ID, ERPNEXT_URL, etc.)")
+        logger.warning(f"   3. Restart orchestrator")
+        logger.info(f"   Proceeding without skills — agents will run with limited capabilities.")
+    elif mcp_json.exists():
+        logger.info(f"✓ MCP config loaded: {mcp_json}")
+        logger.info(f"  Available skills: email, erpnext, browser, windows")
+
     mode = "DRY RUN" if DRY_RUN else "LIVE"
-    logger.info(f"Orchestrator (Gold) starting [{mode}] — Agent: {AGENT.upper()} — vault: {vault}")
+    logger.info(f"Orchestrator (Gold) starting [{mode}] — Agent: {AGENT.upper()} [YOLO MODE: auto-approve all actions] — vault: {vault}")
+
 
     executor = ApprovedActionExecutor(vault)
 

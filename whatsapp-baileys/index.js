@@ -369,11 +369,34 @@ const server = createServer(async (req, res) => {
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-server.listen(HTTP_PORT, () => {
-  console.log(`\n🤖 WhatsApp Baileys Watcher`);
-  console.log(`   Vault:     ${VAULT_PATH}`);
-  console.log(`   HTTP API:  http://localhost:${HTTP_PORT}`);
-  console.log(`   DRY_RUN:   ${DRY_RUN}`);
-  console.log(`   Keywords:  Accepting ALL messages\n`);
-  startWhatsApp();
+function startServer(port) {
+  server.listen(port, () => {
+    console.log(`\n🤖 WhatsApp Baileys Watcher`);
+    console.log(`   Vault:     ${VAULT_PATH}`);
+    console.log(`   HTTP API:  http://localhost:${port}`);
+    console.log(`   DRY_RUN:   ${DRY_RUN}`);
+    console.log(`   Keywords:  Accepting ALL messages\n`);
+    startWhatsApp();
+  });
+}
+
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.warn(`Port ${HTTP_PORT} is already in use. Trying next port.`);
+    const fallbackPort = HTTP_PORT + 1;
+    server.close();
+    server.listen(fallbackPort, () => {
+      console.log(`\n🤖 WhatsApp Baileys Watcher started on fallback port ${fallbackPort}`);
+      console.log(`   Vault:     ${VAULT_PATH}`);
+      console.log(`   HTTP API:  http://localhost:${fallbackPort}`);
+      console.log(`   DRY_RUN:   ${DRY_RUN}`);
+      console.log(`   Keywords:  Accepting ALL messages\n`);
+      startWhatsApp();
+    });
+  } else {
+    console.error("WhatsApp server error:", err);
+    process.exit(1);
+  }
 });
+
+startServer(HTTP_PORT);

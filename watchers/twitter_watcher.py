@@ -3,7 +3,10 @@ twitter_watcher.py - Twitter/X Post Queue Watcher (Gold Tier).
 
 Reads AI_Employee_Vault/Social_Queue/Twitter_Queue.md for scheduled posts.
 When a post's scheduled_for time arrives, creates a /Needs_Action trigger.
-Claude then drafts/finalises → /Pending_Approval → Orchestrator calls twitter_poster.py.
+
+SUPPORTS TWO MODES:
+  1. Topic-based (AI drafts): Provide "topic" field, AI writes full tweet
+  2. Content-based (You write): Provide "content" field, AI reviews/refines
 
 Usage:
     python twitter_watcher.py --vault /path/to/AI_Employee_Vault
@@ -35,7 +38,12 @@ QUEUE_FILE = Path("Social_Queue") / "Twitter_Queue.md"
 
 
 def _parse_queue(vault: Path) -> list:
-    """Parse Twitter_Queue.md and return list of post dicts."""
+    """Parse Twitter_Queue.md and return list of post dicts.
+    
+    Supports two formats:
+    1. Topic-based: topic + tone (AI drafts)
+    2. Content-based: content + hashtags (you write, AI reviews)
+    """
     queue_file = vault / QUEUE_FILE
     if not queue_file.exists():
         return []
@@ -63,6 +71,8 @@ def _parse_queue(vault: Path) -> list:
             "status":        extract("status"),
             "scheduled_for": extract("scheduled_for"),
             "content":       content,
+            "topic":         extract("topic"),  # NEW: AI drafts from this
+            "tone":          extract("tone") or "professional",
             "hashtags":      extract("hashtags"),
         })
 
@@ -119,15 +129,64 @@ class TwitterWatcher(BaseWatcher):
         return due
 
     def create_action_file(self, post: dict) -> Path:
+        """Create a Needs_Action file for a due Twitter post.
+        
+        Supports two modes:
+        1. Topic-based: AI drafts from topic
+        2. Content-based: AI reviews existing content
+        """
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         safe_title = re.sub(r"[^a-zA-Z0-9_]", "_", post["title"])[:40]
         md_path = self.needs_action / f"TWITTER_{safe_title}_{ts}.md"
 
-        full_content = post["content"]
-        if post["hashtags"]:
-            full_content = f"{full_content}\n{post['hashtags']}"
+        # Check if this is topic-based (AI drafts) or content-based (AI reviews)
+        is_topic_based = bool(post.get("topic"))
+        
+        if is_topic_based:
+            # Mode 1: AI drafts from topic
+            content = f"""---
+type: twitter_post
+title: {post['title']}
+scheduled_for: {post['scheduled_for']}
+topic: {post['topic']}
+tone: {post['tone']}
+status: pending
+created: {datetime.utcnow().isoformat()}Z
+---
 
-        content = f"""---
+## Twitter/X Post Due for Publishing (AI Draft Mode)
+
+**Title:** {post['title']}
+**Scheduled:** {post['scheduled_for']}
+**Topic:** {post['topic']}
+**Tone:** {post['tone']}
+
+---
+
+## Instructions for Claude
+
+1. Read the topic above.
+2. Use the `/post-twitter` skill to draft a compelling tweet (max 280 chars).
+3. Include relevant hashtags based on the topic.
+4. Save the draft to `/Pending_Approval/TWITTER_{safe_title}_{ts}.md`.
+5. Do NOT post directly — human approval required.
+6. Update Dashboard.md when done.
+
+---
+
+## Checklist
+
+- [ ] Draft tweet from topic (use /post-twitter)
+- [ ] Verify character count ≤ 280
+- [ ] Move to /Pending_Approval
+"""
+        else:
+            # Mode 2: AI reviews existing content
+            full_content = post["content"]
+            if post["hashtags"]:
+                full_content = f"{full_content}\n{post['hashtags']}"
+
+            content = f"""---
 type: twitter_post
 title: {post['title']}
 scheduled_for: {post['scheduled_for']}
@@ -172,6 +231,7 @@ created: {datetime.utcnow().isoformat()}Z
         self.log_action("twitter_post_triggered", {
             "title": post["title"],
             "file": md_path.name,
+            "mode": "topic_based" if is_topic_based else "content_based",
             "dry_run": DRY_RUN,
         })
         return md_path

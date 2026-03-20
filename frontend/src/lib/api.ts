@@ -148,7 +148,7 @@ export async function fetchLogs(): Promise<TaskFile[]> {
 
 export async function taskAction(
   filename: string,
-  action: "approve" | "reject" | "revise" | "ignore" | "edit" | "force_approve" | "draft",
+  action: "approve" | "reject" | "revise" | "ignore" | "edit" | "force_approve" | "draft" | "process",
   feedback?: string,
   source_folder?: string,
   content?: string

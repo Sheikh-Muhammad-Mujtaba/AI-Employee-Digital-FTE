@@ -25,11 +25,6 @@ async def get_done_tasks(_user: User = Depends(get_current_user)):
     return list_folder_tasks("Done")
 
 
-@router.get("/approved", response_model=list[TaskFile])
-async def get_approved_tasks(_user: User = Depends(get_current_user)):
-    return list_folder_tasks("Approved")
-
-
 @router.get("/logs", response_model=list[TaskFile])
 async def get_logs_tasks(_user: User = Depends(get_current_user)):
     return list_folder_tasks("Logs")
@@ -47,7 +42,7 @@ async def task_action(
     _user: User = Depends(get_current_user),
 ):
     source = body.source_folder
-    
+
     if body.action == "edit":
         from config import VAULT_PATH
         filepath = VAULT_PATH / source / filename
@@ -67,6 +62,24 @@ async def task_action(
         filepath.write_text(content, encoding="utf-8")
         return TaskActionResponse(filename=filename, action="draft", destination=source, success=True)
 
+    if body.action == "process":
+        # Process action: Pending Approval -> Approved (orchestrator executes from Approved)
+        # This is triggered from the UI "Process" button in Pending Approval.
+        dest = "Approved"
+        if source != "Pending_Approval":
+            # Keep behavior consistent: if submitted from Needs_Action, move to Pending_Approval first.
+            source = "Pending_Approval"
+        try:
+            new_path = move_task_file(filename, source, dest)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"File {filename} not found in {source}")
+        return TaskActionResponse(
+            filename=filename,
+            action="process",
+            destination=dest,
+            success=True,
+        )
+
     if body.action == "revise":
         dest = "Needs_Action"
     elif body.action in ("reject", "ignore"):
@@ -81,7 +94,7 @@ async def task_action(
                 f.write(f"\n\n## User Feedback\n{body.feedback}\n")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File {filename} not found in {source}")
-        
+
     return TaskActionResponse(
         filename=filename,
         action=body.action,

@@ -7,6 +7,10 @@ Watches both:
 
 When a post's scheduled_for time arrives, creates a /Needs_Action trigger.
 
+SUPPORTS TWO MODES:
+  1. Topic-based (AI drafts): Provide "topic" field, AI writes full post
+  2. Content-based (You write): Provide "content" field, AI reviews/refines
+
 Usage:
     python facebook_watcher.py --vault /path/to/AI_Employee_Vault
 
@@ -40,6 +44,12 @@ QUEUE_FILES = {
 
 
 def _parse_queue(vault: Path, platform: str) -> list:
+    """Parse queue file and return list of post dicts.
+    
+    Supports two formats:
+    1. Topic-based: topic + tone (AI drafts)
+    2. Content-based: content + hashtags (you write, AI reviews)
+    """
     queue_file = vault / QUEUE_FILES[platform]
     if not queue_file.exists():
         return []
@@ -66,6 +76,8 @@ def _parse_queue(vault: Path, platform: str) -> list:
             "status":        extract("status"),
             "scheduled_for": extract("scheduled_for"),
             "content":       content,
+            "topic":         extract("topic"),  # NEW: AI drafts from this
+            "tone":          extract("tone") or "professional",  # NEW
             "hashtags":      extract("hashtags"),
             "image_url":     extract("image_url"),
         })
@@ -123,18 +135,76 @@ class FacebookWatcher(BaseWatcher):
         return due
 
     def create_action_file(self, post: dict) -> Path:
+        """Create a Needs_Action file for a due post.
+        
+        Supports two modes:
+        1. Topic-based: AI drafts from topic
+        2. Content-based: AI reviews existing content
+        """
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         platform = post["platform"].upper()
         safe_title = re.sub(r"[^a-zA-Z0-9_]", "_", post["title"])[:40]
         md_path = self.needs_action / f"{platform}_{safe_title}_{ts}.md"
 
-        full_content = post["content"]
-        if post["hashtags"]:
-            full_content = f"{full_content}\n{post['hashtags']}"
+        # Check if this is topic-based (AI drafts) or content-based (AI reviews)
+        is_topic_based = bool(post.get("topic"))
+        
+        if is_topic_based:
+            # Mode 1: AI drafts from topic
+            full_content = post["topic"]
+            if post["hashtags"]:
+                full_content = f"{full_content}\n{post['hashtags']}"
 
-        image_line = f"**Image URL:** {post['image_url']}" if post["image_url"] else "_No image (Facebook text post)_"
+            image_line = f"**Image URL:** {post['image_url']}" if post["image_url"] else "_No image required_"
 
-        content = f"""---
+            content = f"""---
+type: {post['platform']}_post
+title: {post['title']}
+platform: {post['platform']}
+scheduled_for: {post['scheduled_for']}
+topic: {post['topic']}
+tone: {post['tone']}
+status: pending
+created: {datetime.utcnow().isoformat()}Z
+---
+
+## {platform} Post Due for Publishing (AI Draft Mode)
+
+**Title:** {post['title']}
+**Scheduled:** {post['scheduled_for']}
+**Topic:** {post['topic']}
+**Tone:** {post['tone']}
+{image_line}
+
+---
+
+## Instructions for Claude
+
+1. Read the topic above.
+2. Use the `/post-{post['platform']}` skill to draft a compelling post.
+3. Include relevant hashtags based on the topic.
+4. {"Include image_url in frontmatter for Instagram posts." if post['platform'] == 'instagram' else "No image required for this post."}
+5. Save the draft to `/Pending_Approval/{platform}_{safe_title}_{ts}.md`.
+6. Do NOT post directly — human approval required.
+7. Update Dashboard.md when done.
+
+---
+
+## Checklist
+
+- [ ] Draft post from topic (use /post-{post['platform']})
+- [ ] {"Confirm image_url is accessible (Instagram only)" if post['platform'] == 'instagram' else "Add relevant hashtags"}
+- [ ] Move to /Pending_Approval
+"""
+        else:
+            # Mode 2: AI reviews existing content
+            full_content = post["content"]
+            if post["hashtags"]:
+                full_content = f"{full_content}\n{post['hashtags']}"
+
+            image_line = f"**Image URL:** {post['image_url']}" if post["image_url"] else "_No image (Facebook text post)_"
+
+            content = f"""---
 type: {post['platform']}_post
 title: {post['title']}
 platform: {post['platform']}
@@ -167,7 +237,7 @@ created: {datetime.utcnow().isoformat()}Z
 ## Checklist
 
 - [ ] Review / refine content
-- [ ] Confirm image_url is accessible (Instagram only)
+- [ ] {"Confirm image_url is accessible (Instagram only)" if post['platform'] == 'instagram' else "Verify hashtags included"}
 - [ ] Move to /Pending_Approval
 """
 
@@ -182,6 +252,7 @@ created: {datetime.utcnow().isoformat()}Z
             "title": post["title"],
             "platform": post["platform"],
             "file": md_path.name,
+            "mode": "topic_based" if is_topic_based else "content_based",
             "dry_run": DRY_RUN,
         })
         return md_path

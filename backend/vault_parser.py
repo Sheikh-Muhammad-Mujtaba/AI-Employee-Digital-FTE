@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -195,11 +195,23 @@ def list_folder_tasks(folder_name: str) -> list[TaskFile]:
 
 
 def move_task_file(filename: str, src_folder: str, dest_folder: str) -> Path:
-    """Move a file between vault sub-folders. Returns new path."""
+    """Move a file between vault sub-folders. Returns new path.
+
+    If destination already exists, append a timestamp to avoid Windows
+    FileExistsError and preserve both files.
+    """
     src = VAULT_PATH / src_folder / filename
+    if not src.exists():
+        raise FileNotFoundError(f"Source file not found: {src}")
+
     dest_dir = VAULT_PATH / dest_folder
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / filename
+
+    if dest.exists():
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = dest_dir / f"{Path(filename).stem}_{timestamp}{Path(filename).suffix}"
+
     src.rename(dest)
     return dest
 

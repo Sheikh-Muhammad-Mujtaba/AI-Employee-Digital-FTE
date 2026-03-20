@@ -1,0 +1,47 @@
+{
+  "_comment": "AI Employee Gold Tier — MCP Server Configuration",
+  "_usage": "Use with: claude --mcp-config mcp.json  (from Gold Tier directory)",
+  "_docs": "https://modelcontextprotocol.io/quickstart",
+  "_social_note": "Twitter, Facebook, Instagram use Playwright scripts directly — no MCP needed",
+  "mcpServers": {
+    "erpnext": {
+      "_comment": "ERPNext MCP — accounting CRUD via ERPNext REST API",
+      "_setup": "cd ERP_Next-MCP && uv sync && cp .env.example .env (fill credentials)",
+      "command": "python",
+      "args": [
+        "-m",
+        "ERP_Next-MCP.src.server"
+      ],
+      "cwd": "./ERP_Next-MCP/",
+      "env": {
+        "ERPNEXT_URL": "https://nb.truetechterminal.com",
+        "ERPNEXT_USERNAME": "administrator",
+        "ERPNEXT_PASSWORD": "Taccuracy!@#786"
+      }
+    },
+    "browser": {
+      "_comment": "Browser MCP — web automation for form-filling, ad-hoc scraping",
+      "_setup": "npm install -g @anthropic/browser-mcp",
+      "command": "cmd /c npx",
+      "args": [
+        "-y",
+        "@anthropic/browser-mcp"
+      ],
+      "env": {
+        "HEADLESS": "true"
+      }
+    },
+    "windows-mcp": {
+      "_comment": "Windows MCP — full desktop UI automation (click, type, screenshot, shell, app launch, clipboard, etc.)",
+      "_setup": "pip install uv   (requires Python 3.13+ and uv package manager)",
+      "_docs": "https://github.com/CursorTouch/Windows-MCP",
+      "command": "uvx",
+      "args": [
+        "windows-mcp"
+      ],
+      "env": {
+        "ANONYMIZED_TELEMETRY": "false"
+      }
+    }
+  }
+}

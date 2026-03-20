@@ -191,6 +191,17 @@ class PlatinumActionExecutor:
                     fields[key.strip()] = val.strip()
         return fields
 
+    def _extract_body_content(self, text: str) -> str:
+        """Return body text after frontmatter block."""
+        if not text:
+            return ""
+        trimmed = text.strip()
+        if trimmed.startswith("---"):
+            m = re.match(r"^---\s*\n.*?\n---\s*\n?(.*)$", trimmed, re.DOTALL)
+            if m:
+                return m.group(1).strip()
+        return trimmed
+
     def _move_to_done(self, approved_file: Path):
         """Move completed file to Local/Done/."""
         dest = self.done_folder / approved_file.name
@@ -205,9 +216,8 @@ class PlatinumActionExecutor:
         to = fields.get("to", "")
         subject = fields.get("subject", "")
         
-        # Extract body
-        body_match = re.search(r"---\n\n(.+?)\n\n---", text, re.DOTALL)
-        body = body_match.group(1).strip() if body_match else ""
+        # Extract body using unified helper (strips frontmatter)
+        body = self._extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would send email to: {to} | Subject: {subject}")
@@ -240,8 +250,7 @@ class PlatinumActionExecutor:
         import requests
 
         jid = fields.get("jid", "")
-        body_match = re.search(r"---\n\n(.+?)(?:\n\n---|$)", text, re.DOTALL)
-        body = body_match.group(1).strip() if body_match else ""
+        body = self._extract_body_content(text)
 
         if not jid or not body:
             logger.error(f"WhatsApp missing jid or body")
@@ -263,8 +272,7 @@ class PlatinumActionExecutor:
 
     def _execute_post_linkedin(self, approved_file: Path, fields: dict, text: str):
         """Post to LinkedIn via Playwright."""
-        body_match = re.search(r"---\n\n(.+?)\n\n---", text, re.DOTALL)
-        content = body_match.group(1).strip() if body_match else ""
+        content = self._extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to LinkedIn: {content[:100]}...")
@@ -288,8 +296,7 @@ class PlatinumActionExecutor:
 
     def _execute_post_twitter(self, approved_file: Path, fields: dict, text: str):
         """Post to Twitter via Playwright."""
-        parts = text.split("---")
-        content = parts[3].strip() if len(parts) > 3 else ""
+        content = self._extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to Twitter: {content[:100]}...")
@@ -313,8 +320,7 @@ class PlatinumActionExecutor:
 
     def _execute_post_facebook(self, approved_file: Path, fields: dict, text: str):
         """Post to Facebook via Playwright."""
-        parts = text.split("---")
-        content = parts[3].strip() if len(parts) > 3 else ""
+        content = self._extract_body_content(text)
 
         if DRY_RUN:
             logger.info(f"[DRY RUN] Would post to Facebook: {content[:100]}...")
@@ -338,8 +344,7 @@ class PlatinumActionExecutor:
 
     def _execute_post_instagram(self, approved_file: Path, fields: dict, text: str):
         """Post to Instagram via Playwright."""
-        parts = text.split("---")
-        content = parts[3].strip() if len(parts) > 3 else ""
+        content = self._extract_body_content(text)
         image_url = fields.get("image_url", "")
 
         if DRY_RUN:

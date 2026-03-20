@@ -41,6 +41,13 @@ Add posts below using the format shown. Set `status: pending` for posts you want
 - tone: educational
 - status: triggered
 
+### Platinum_Tier_Demo
+- status: pending
+- scheduled_for: 2026-03-19 18:00
+- topic: Live demo of our Platinum Tier AI Employee! It's drafting this post automatically from just a topic idea on all
+  platforms - LinkedIn, Twitter, Facebook, and Instagram!
+- tone: professional
+
 ---
 
 <!--

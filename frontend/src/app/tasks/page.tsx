@@ -5,14 +5,13 @@ import {
   fetchPendingTasks,
   fetchNeedsAction,
   fetchDoneTasks,
-  fetchApprovedTasks,
   fetchLogs,
   fetchPlans,
   taskAction,
   type TaskFile,
 } from "@/lib/api";
 
-type Tab = "pending" | "needs_action" | "approved" | "done" | "plans" | "logs";
+type Tab = "pending" | "needs_action" | "done" | "plans" | "logs";
 
 export default function TasksPage() {
   const [tab, setTab] = useState<Tab>("pending");
@@ -38,9 +37,6 @@ export default function TasksPage() {
         case "needs_action":
           data = await fetchNeedsAction();
           break;
-        case "approved":
-          data = await fetchApprovedTasks();
-          break;
         case "done":
           data = await fetchDoneTasks();
           break;
@@ -63,24 +59,45 @@ export default function TasksPage() {
     loadTasks();
   }, [loadTasks]);
 
-  const handleAction = async (filename: string, action: "approve" | "reject" | "revise" | "ignore" | "edit" | "force_approve" | "draft") => {
+  const handleAction = async (filename: string, action: "approve" | "reject" | "revise" | "ignore" | "edit" | "force_approve" | "draft" | "process") => {
     setActionLoading(filename);
     try {
       const fb = action === "revise" ? feedback : undefined;
       const content = action === "edit" ? editContent : undefined;
       const source = tab === "needs_action" ? "Needs_Action" : "Pending_Approval";
 
+      // Show loading message for AI Draft action
+      if (action === "draft") {
+        alert(`🤖 AI is processing "${filename}"...\n\nThis may take 30-60 seconds.\nThe file will appear in Pending Approval when ready.`);
+      }
+
+      // Show processing message for Process action
+      if (action === "process") {
+        alert(`⚙️ Processing "${filename}"...\n\nAI is executing the action (sending email, posting to social, etc.)\nThis may take 30-60 seconds.`);
+      }
+
       await taskAction(filename, action, fb, source, content);
 
       if (action !== "edit") {
         setTasks((prev) => prev.filter((t) => t.filename !== filename));
+        // Show success message
+        if (action === "draft") {
+          alert(`✅ AI drafting started!\n\nCheck "Pending Approval" tab in 30-60 seconds to see the draft.`);
+        } else if (action === "process") {
+          alert(`✅ Processing complete!\n\nThe action has been executed (email sent, post published, etc.)\n\nFile moved to Done.`);
+        } else if (action === "approve") {
+          alert(`✅ Approved!\n\nThe action will be executed shortly.`);
+        } else if (action === "reject") {
+          alert(`✅ Rejected and moved to Rejected folder.`);
+        }
       } else {
         setEditingTask(null);
         setEditContent("");
         await loadTasks();
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Action failed");
+      const errorMsg = err instanceof Error ? err.message : "Action failed";
+      alert(`❌ Error: ${errorMsg}\n\nPlease try again or check the logs for details.`);
     } finally {
       setActionLoading(null);
       setRevisingTask(null);
@@ -106,7 +123,6 @@ export default function TasksPage() {
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "needs_action", label: "🔔 Needs Action" },
     { key: "pending", label: "⏳ Pending Approval" },
-    { key: "approved", label: "✅ Approved" },
     { key: "done", label: "📦 Done" },
     { key: "plans", label: "📋 Plans" },
     { key: "logs", label: "📜 Logs" },
@@ -247,9 +263,10 @@ export default function TasksPage() {
                             className="btn-primary"
                             style={{ padding: "8px 16px", fontSize: "0.8rem" }}
                             disabled={actionLoading === task.filename}
-                            onClick={() => handleAction(task.filename, "approve")}
+                            onClick={() => handleAction(task.filename, "process")}
+                            title="Process this draft - AI will execute the action (send email, post to social, etc.)"
                           >
-                            {actionLoading === task.filename ? "…" : "✓ Approve"}
+                            {actionLoading === task.filename ? "…" : "⚙️ Process"}
                           </button>
                           <button
                             className="btn-ghost"
